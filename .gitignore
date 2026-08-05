@@ -1,6 +1,7 @@
 .worktrees/
 .superpowers/
 backend/target/
+backend/data/
 frontend/node_modules/
 frontend/dist/
 

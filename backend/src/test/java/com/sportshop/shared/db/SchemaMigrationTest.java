@@ -50,6 +50,15 @@ class SchemaMigrationTest {
     }
 
     @Test
+    void storesAnIdempotencyRequestDigestForPayloadConflictDetection() {
+        List<String> columns = jdbcTemplate.queryForList(
+                "SELECT name FROM pragma_table_info('idempotency_request') ORDER BY cid", String.class);
+
+        org.assertj.core.api.Assertions.assertThat(columns)
+                .containsExactly("request_id", "resource_type", "resource_id", "created_at", "request_hash");
+    }
+
+    @Test
     void declaresEveryTextPrimaryKeyNotNull() {
         for (String tableName : List.of(
                 "category", "brand", "product_spu", "product_sku", "sku_spec", "inventory_balance",
