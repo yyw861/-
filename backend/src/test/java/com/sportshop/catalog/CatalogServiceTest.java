@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.sportshop.catalog.CatalogModels.QuickCreateSkuCommand;
+import com.sportshop.catalog.CatalogModels.CreateProductCommand;
 import com.sportshop.catalog.CatalogModels.UpdateProductCommand;
 import com.sportshop.catalog.CatalogModels.UpdateSkuCommand;
 import com.sportshop.support.DatabaseTestSupport;
@@ -45,7 +46,7 @@ class CatalogServiceTest {
         var brand = catalogService.createBrand("李宁");
         int before = jdbcClient.sql("SELECT COUNT(*) FROM product_spu").query(Integer.class).single();
         var first = catalogService.quickCreate(command(category.id(), brand.id(), null, "音速 12", "LN-YS-12-41", "6900000000101", Map.of("尺码", "41")));
-        var second = catalogService.quickCreate(command(category.id(), brand.id(), first.spuId(), "忽略名称", "LN-YS-12-42", "6900000000102", Map.of("尺码", "42")));
+        var second = catalogService.quickCreate(command(category.id(), brand.id(), first.spuId(), "音速 12", "LN-YS-12-42", "6900000000102", Map.of("尺码", "42")));
 
         assertThat(second.spuId()).isEqualTo(first.spuId());
         assertThat(jdbcClient.sql("SELECT COUNT(*) FROM product_spu").query(Integer.class).single()).isEqualTo(before + 1);
@@ -86,6 +87,36 @@ class CatalogServiceTest {
         catalogService.setSkuEnabled(sku.id(), false);
 
         assertThat(catalogService.findByBarcode(sku.barcode())).hasValueSatisfying(found -> assertThat(found.enabled()).isFalse());
+    }
+
+    @Test
+    void createsStandaloneSpuAndRejectsConflictingExistingSpuFields() {
+        var running = catalogService.createCategory("running");
+        var basketball = catalogService.createCategory("basketball");
+        var nike = catalogService.createBrand("nike");
+        var adidas = catalogService.createBrand("adidas");
+        var standalone = catalogService.createProduct(new CreateProductCommand(running.id(), nike.id(), "Pegasus", null, "daily trainer"));
+        var sku = catalogService.quickCreate(command(running.id(), nike.id(), standalone.id(), "Pegasus", "PEG-42", "6900000000501", Map.of()));
+
+        assertThat(standalone.skus()).isEmpty();
+        assertThat(sku.spuId()).isEqualTo(standalone.id());
+        assertThatThrownBy(() -> catalogService.quickCreate(command(basketball.id(), nike.id(), standalone.id(), "Pegasus", "PEG-43", "6900000000502", Map.of())))
+                .isInstanceOf(CatalogValidationException.class);
+        assertThatThrownBy(() -> catalogService.quickCreate(command(running.id(), adidas.id(), standalone.id(), "Pegasus", "PEG-44", "6900000000503", Map.of())))
+                .isInstanceOf(CatalogValidationException.class);
+        assertThatThrownBy(() -> catalogService.quickCreate(command(running.id(), nike.id(), standalone.id(), "Different", "PEG-45", "6900000000504", Map.of())))
+                .isInstanceOf(CatalogValidationException.class);
+    }
+
+    @Test
+    void duplicateRenameIsConflictAndUnrepresentablePageIsInvalid() {
+        var first = catalogService.createCategory("unique-first");
+        var second = catalogService.createCategory("unique-second");
+
+        assertThatThrownBy(() -> catalogService.updateCategory(second.id(), first.name(), second.sortOrder(), second.enabled()))
+                .isInstanceOf(DuplicateCatalogFieldException.class);
+        assertThatThrownBy(() -> catalogService.products(Integer.MAX_VALUE, 100))
+                .isInstanceOf(CatalogValidationException.class);
     }
 
     private static QuickCreateSkuCommand command(UUID categoryId, UUID brandId, UUID existingSpuId, String name, String skuCode, String barcode, Map<String, String> specs) {

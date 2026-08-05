@@ -7,6 +7,8 @@ import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -51,10 +53,16 @@ class CatalogRepository {
         return jdbc.sql("SELECT COUNT(*) FROM category WHERE name = :name").param("name", name)
                 .query(Long.class).single() > 0;
     }
+    boolean categoryNameExistsExcept(String name, UUID id) {
+        return jdbc.sql("SELECT COUNT(*) FROM category WHERE name = :name AND id <> :id").param("name", name).param("id", id.toString()).query(Long.class).single() > 0;
+    }
 
     boolean brandNameExists(String name) {
         return jdbc.sql("SELECT COUNT(*) FROM brand WHERE name = :name").param("name", name)
                 .query(Long.class).single() > 0;
+    }
+    boolean brandNameExistsExcept(String name, UUID id) {
+        return jdbc.sql("SELECT COUNT(*) FROM brand WHERE name = :name AND id <> :id").param("name", name).param("id", id.toString()).query(Long.class).single() > 0;
     }
 
     boolean barcodeExists(String barcode, UUID excludingSkuId) {
@@ -76,9 +84,13 @@ class CatalogRepository {
     }
 
     void insertSpu(UUID id, String name, UUID categoryId, UUID brandId, String now) {
-        jdbc.sql("INSERT INTO product_spu (id, name, category_id, brand_id, enabled, created_at, updated_at) VALUES (:id, :name, :categoryId, :brandId, 1, :now, :now)")
+        insertSpu(id, name, categoryId, brandId, null, null, now);
+    }
+
+    void insertSpu(UUID id, String name, UUID categoryId, UUID brandId, String imageUrl, String description, String now) {
+        jdbc.sql("INSERT INTO product_spu (id, name, category_id, brand_id, image_url, description, enabled, created_at, updated_at) VALUES (:id, :name, :categoryId, :brandId, :imageUrl, :description, 1, :now, :now)")
                 .param("id", id.toString()).param("name", name).param("categoryId", categoryId.toString())
-                .param("brandId", brandId.toString()).param("now", now).update();
+                .param("brandId", brandId.toString()).param("imageUrl", imageUrl).param("description", description).param("now", now).update();
     }
 
     boolean spuExists(UUID id) {
@@ -119,6 +131,27 @@ class CatalogRepository {
     List<SkuView> findSkusBySpu(UUID spuId) {
         return jdbc.sql("SELECT id, spu_id, sku_code, barcode, retail_price, warning_stock, enabled FROM product_sku WHERE spu_id = :spuId ORDER BY created_at, id").param("spuId", spuId.toString())
                 .query(this::mapSku).list();
+    }
+
+    List<SkuView> findSkusBySpuIds(List<UUID> spuIds) {
+        if (spuIds.isEmpty()) return List.of();
+        String placeholders = java.util.stream.IntStream.range(0, spuIds.size()).mapToObj(i -> ":id" + i).collect(java.util.stream.Collectors.joining(","));
+        JdbcClient.StatementSpec statement = jdbc.sql("SELECT id, spu_id, sku_code, barcode, retail_price, warning_stock, enabled FROM product_sku WHERE spu_id IN (" + placeholders + ") ORDER BY created_at, id");
+        for (int i = 0; i < spuIds.size(); i++) statement.param("id" + i, spuIds.get(i).toString());
+        List<SkuRow> rows = statement.query((rs, row) -> new SkuRow(uuid(rs, "id"), uuid(rs, "spu_id"), rs.getString("sku_code"), rs.getString("barcode"), rs.getBigDecimal("retail_price"), rs.getInt("warning_stock"), rs.getInt("enabled") == 1)).list();
+        Map<UUID, Map<String, String>> specs = specsFor(rows.stream().map(SkuRow::id).toList());
+        return rows.stream().map(row -> new SkuView(row.id(), row.spuId(), row.skuCode(), row.barcode(), specs.getOrDefault(row.id(), Map.of()), row.retailPrice(), row.warningStock(), row.enabled())).toList();
+    }
+
+    private Map<UUID, Map<String, String>> specsFor(List<UUID> skuIds) {
+        if (skuIds.isEmpty()) return Map.of();
+        String placeholders = java.util.stream.IntStream.range(0, skuIds.size()).mapToObj(i -> ":spec" + i).collect(java.util.stream.Collectors.joining(","));
+        JdbcClient.StatementSpec statement = jdbc.sql("SELECT sku_id, spec_name, spec_value FROM sku_spec WHERE sku_id IN (" + placeholders + ") ORDER BY spec_name");
+        for (int i = 0; i < skuIds.size(); i++) statement.param("spec" + i, skuIds.get(i).toString());
+        Map<UUID, Map<String, String>> specs = new HashMap<>();
+        statement.query((rs, row) -> new SpecRow(uuid(rs, "sku_id"), rs.getString("spec_name"), rs.getString("spec_value"))).list()
+                .forEach(spec -> specs.computeIfAbsent(spec.skuId(), ignored -> new LinkedHashMap<>()).put(spec.name(), spec.value()));
+        return specs.entrySet().stream().collect(java.util.stream.Collectors.toMap(Map.Entry::getKey, entry -> Map.copyOf(entry.getValue())));
     }
 
     void updateSpu(UUID id, String name, UUID categoryId, UUID brandId, String imageUrl, String description,
@@ -203,4 +236,6 @@ class CatalogRepository {
     record ProductRow(UUID id, String name, UUID categoryId, UUID brandId, String imageUrl, String description,
                       boolean enabled) {
     }
+    record SkuRow(UUID id, UUID spuId, String skuCode, String barcode, BigDecimal retailPrice, int warningStock, boolean enabled) {}
+    record SpecRow(UUID skuId, String name, String value) {}
 }

@@ -1,6 +1,7 @@
 package com.sportshop.catalog;
 
 import com.sportshop.catalog.CatalogModels.BrandView;
+import com.sportshop.catalog.CatalogModels.CreateProductCommand;
 import com.sportshop.catalog.CatalogModels.CategoryView;
 import com.sportshop.catalog.CatalogModels.PageView;
 import com.sportshop.catalog.CatalogModels.ProductView;
@@ -15,6 +16,7 @@ import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -48,7 +50,11 @@ public class CatalogController {
 
     @PatchMapping("/categories/{id}")
     CategoryView updateCategory(@PathVariable UUID id, @RequestBody CategoryPatchRequest request) {
-        return catalogService.updateCategory(id, request.name(), request.sortOrder(), request.enabled());
+        CategoryView current = catalogService.categories().stream().filter(value -> value.id().equals(id)).findFirst()
+                .orElseThrow(() -> new CatalogNotFoundException("Category not found"));
+        return catalogService.updateCategory(id, request.name() == null ? current.name() : request.name(),
+                request.sortOrder() == null ? current.sortOrder() : request.sortOrder(),
+                request.enabled() == null ? current.enabled() : request.enabled());
     }
 
     @GetMapping("/brands")
@@ -61,7 +67,11 @@ public class CatalogController {
 
     @PatchMapping("/brands/{id}")
     BrandView updateBrand(@PathVariable UUID id, @RequestBody BrandPatchRequest request) {
-        return catalogService.updateBrand(id, request.name(), request.remark(), request.enabled());
+        BrandView current = catalogService.brands().stream().filter(value -> value.id().equals(id)).findFirst()
+                .orElseThrow(() -> new CatalogNotFoundException("Brand not found"));
+        return catalogService.updateBrand(id, request.name() == null ? current.name() : request.name(),
+                request.remark() == null ? current.remark() : request.remark(),
+                request.enabled() == null ? current.enabled() : request.enabled());
     }
 
     @GetMapping("/catalog/products")
@@ -75,10 +85,23 @@ public class CatalogController {
         return catalogService.findProduct(id).orElseThrow(() -> new CatalogNotFoundException("Product not found"));
     }
 
+    @PostMapping("/catalog/products")
+    ResponseEntity<ProductView> createProduct(@RequestBody CreateProductCommand command) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(catalogService.createProduct(command));
+    }
+
     @PatchMapping("/catalog/products/{id}")
     ProductView updateProduct(@PathVariable UUID id, @RequestBody ProductPatchRequest request) {
-        return catalogService.updateProduct(new UpdateProductCommand(id, request.productName(), request.categoryId(),
-                request.brandId(), request.imageUrl(), request.description(), request.enabled(), request.skus()));
+        ProductView current = catalogService.findProduct(id).orElseThrow(() -> new CatalogNotFoundException("Product not found"));
+        return catalogService.updateProduct(new UpdateProductCommand(id,
+                request.productName() == null ? current.name() : request.productName(),
+                request.categoryId() == null ? current.categoryId() : request.categoryId(),
+                request.brandId() == null ? current.brandId() : request.brandId(),
+                request.imageUrl() == null ? current.imageUrl() : request.imageUrl(),
+                request.description() == null ? current.description() : request.description(),
+                request.enabled() == null ? current.enabled() : request.enabled(),
+                request.skus() == null ? current.skus().stream().map(sku -> new UpdateSkuCommand(sku.id(), sku.skuCode(),
+                        sku.barcode(), sku.specs(), sku.retailPrice(), sku.warningStock(), sku.enabled())).toList() : request.skus()));
     }
 
     @PostMapping("/catalog/skus/quick-create")
@@ -93,12 +116,19 @@ public class CatalogController {
 
     @PatchMapping("/catalog/skus/{id}")
     SkuView updateSku(@PathVariable UUID id, @RequestBody SkuPatchRequest request) {
-        return catalogService.updateSku(id, new UpdateSkuCommand(id, request.skuCode(), request.barcode(), request.specs(),
-                request.retailPrice(), request.warningStock(), request.enabled()));
+        SkuView current = catalogService.findSku(id).orElseThrow(() -> new CatalogNotFoundException("SKU not found"));
+        return catalogService.updateSku(id, new UpdateSkuCommand(id,
+                request.skuCode() == null ? current.skuCode() : request.skuCode(),
+                request.barcode() == null ? current.barcode() : request.barcode(),
+                request.specs() == null ? current.specs() : request.specs(),
+                request.retailPrice() == null ? current.retailPrice() : request.retailPrice(),
+                request.warningStock() == null ? current.warningStock() : request.warningStock(),
+                request.enabled() == null ? current.enabled() : request.enabled()));
     }
 
     @PatchMapping("/catalog/skus/{id}/enabled")
     ResponseEntity<Void> setSkuEnabled(@PathVariable UUID id, @RequestBody EnabledRequest request) {
+        if (request.enabled() == null) throw new CatalogValidationException("Enabled is required");
         catalogService.setSkuEnabled(id, request.enabled());
         return ResponseEntity.ok().build();
     }
@@ -106,21 +136,21 @@ public class CatalogController {
     public record NameRequest(String name) {
     }
 
-    public record CategoryPatchRequest(String name, int sortOrder, boolean enabled) {
+    public record CategoryPatchRequest(String name, Integer sortOrder, Boolean enabled) {
     }
 
-    public record BrandPatchRequest(String name, String remark, boolean enabled) {
+    public record BrandPatchRequest(String name, String remark, Boolean enabled) {
     }
 
     public record ProductPatchRequest(String productName, UUID categoryId, UUID brandId, String imageUrl,
-                                      String description, boolean enabled, List<UpdateSkuCommand> skus) {
+                                      String description, Boolean enabled, List<UpdateSkuCommand> skus) {
     }
 
     public record SkuPatchRequest(String skuCode, String barcode, Map<String, String> specs, BigDecimal retailPrice,
-                                  Integer warningStock, boolean enabled) {
+                                  Integer warningStock, Boolean enabled) {
     }
 
-    public record EnabledRequest(boolean enabled) {
+    public record EnabledRequest(Boolean enabled) {
     }
 }
 
@@ -130,6 +160,11 @@ class CatalogExceptionHandler {
     @ExceptionHandler(DuplicateCatalogFieldException.class)
     ResponseEntity<ProblemDetail> duplicate(DuplicateCatalogFieldException exception) {
         return problem(HttpStatus.CONFLICT, exception.getMessage());
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    ResponseEntity<ProblemDetail> constraint(DataIntegrityViolationException exception) {
+        return problem(HttpStatus.CONFLICT, "Unique value already exists");
     }
 
     @ExceptionHandler(CatalogValidationException.class)

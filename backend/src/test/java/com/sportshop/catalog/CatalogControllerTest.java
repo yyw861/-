@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -70,6 +71,44 @@ class CatalogControllerTest {
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.status").value(409));
         mvc.perform(post("/api/categories").contentType(MediaType.APPLICATION_JSON).content("{\"name\":\" \"}"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.status").value(400));
+    }
+
+    @Test
+    void createsStandaloneProductAndMergesPartialPatchFields() throws Exception {
+        String categoryId = id(postJson("/api/categories", "{\"name\":\"patch-category\"}"));
+        String brandId = id(postJson("/api/brands", "{\"name\":\"patch-brand\"}"));
+        MvcResult product = postJson("/api/catalog/products", """
+                {"categoryId":"%s","brandId":"%s","productName":"Standalone","description":"before"}
+                """.formatted(categoryId, brandId));
+        String productId = id(product);
+
+        mvc.perform(patch("/api/categories/{id}", categoryId).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"patch-category-renamed\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(true)).andExpect(jsonPath("$.sortOrder").value(0));
+        mvc.perform(patch("/api/catalog/products/{id}", productId).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"description\":\"after\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.name").value("Standalone"))
+                .andExpect(jsonPath("$.categoryId").value(categoryId)).andExpect(jsonPath("$.description").value("after"));
+    }
+
+    @Test
+    void duplicateRenameAndDatabaseConstraintAreConflicts() throws Exception {
+        String first = id(postJson("/api/categories", "{\"name\":\"rename-one\"}"));
+        String second = id(postJson("/api/categories", "{\"name\":\"rename-two\"}"));
+
+        mvc.perform(patch("/api/categories/{id}", second).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"rename-one\"}"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.status").value(409));
+        mvc.perform(get("/api/catalog/products").param("page", Integer.toString(Integer.MAX_VALUE)).param("size", "100"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.status").value(400));
+    }
+
+    @Test
+    void translatesDatabaseUniqueConstraintRacesToConflict() {
+        var response = new CatalogExceptionHandler().constraint(new DataIntegrityViolationException("unique constraint"));
+
+        org.assertj.core.api.Assertions.assertThat(response.getStatusCode()).isEqualTo(org.springframework.http.HttpStatus.CONFLICT);
+        org.assertj.core.api.Assertions.assertThat(response.getBody().getStatus()).isEqualTo(409);
     }
 
     private MvcResult postJson(String path, String body) throws Exception {

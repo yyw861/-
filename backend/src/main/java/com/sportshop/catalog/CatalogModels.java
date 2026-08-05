@@ -33,6 +33,10 @@ public final class CatalogModels {
                                         BigDecimal retailPrice, Integer warningStock) {
     }
 
+    public record CreateProductCommand(UUID categoryId, UUID brandId, String productName, String imageUrl,
+                                       String description) {
+    }
+
     public record UpdateSkuCommand(UUID skuId, String skuCode, String barcode, Map<String, String> specs,
                                    BigDecimal retailPrice, Integer warningStock, boolean enabled) {
     }

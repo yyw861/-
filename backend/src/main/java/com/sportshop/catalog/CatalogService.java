@@ -1,6 +1,7 @@
 package com.sportshop.catalog;
 
 import com.sportshop.catalog.CatalogModels.BrandView;
+import com.sportshop.catalog.CatalogModels.CreateProductCommand;
 import com.sportshop.catalog.CatalogModels.CategoryView;
 import com.sportshop.catalog.CatalogModels.PageView;
 import com.sportshop.catalog.CatalogModels.ProductView;
@@ -51,6 +52,18 @@ public class CatalogService {
     }
 
     @Transactional
+    public ProductView createProduct(CreateProductCommand command) {
+        if (command == null) throw new CatalogValidationException("Request body is required");
+        String name = required(command.productName(), "Product name");
+        requireCategory(command.categoryId());
+        requireBrand(command.brandId());
+        UUID id = UUID.randomUUID();
+        repository.insertSpu(id, name, command.categoryId(), command.brandId(), nullableTrim(command.imageUrl()),
+                nullableTrim(command.description()), now());
+        return findProduct(id).orElseThrow();
+    }
+
+    @Transactional
     public SkuView quickCreate(QuickCreateSkuCommand command) {
         validateQuickCreate(command);
         if (repository.barcodeExists(command.barcode().trim(), null)) throw new DuplicateCatalogFieldException("Barcode already exists");
@@ -62,8 +75,18 @@ public class CatalogService {
             spuId = UUID.randomUUID();
             repository.insertSpu(spuId, command.productName().trim(), command.categoryId(), command.brandId(), now());
         }
-        else if (!repository.spuExists(spuId)) {
-            throw new CatalogNotFoundException("Product not found");
+        else {
+            CatalogRepository.ProductRow product = repository.findProduct(spuId)
+                    .orElseThrow(() -> new CatalogNotFoundException("Product not found"));
+            if (!product.categoryId().equals(command.categoryId())) {
+                throw new CatalogValidationException("Existing product category does not match");
+            }
+            if (!product.brandId().equals(command.brandId())) {
+                throw new CatalogValidationException("Existing product brand does not match");
+            }
+            if (!product.name().equals(command.productName().trim())) {
+                throw new CatalogValidationException("Existing product name does not match");
+            }
         }
         UUID skuId = UUID.randomUUID();
         String timestamp = now();
@@ -83,8 +106,7 @@ public class CatalogService {
         if (!repository.spuExists(command.productId())) throw new CatalogNotFoundException("Product not found");
         repository.updateSpu(command.productId(), command.productName().trim(), command.categoryId(), command.brandId(),
                 nullableTrim(command.imageUrl()), nullableTrim(command.description()), command.enabled(), now());
-        if (command.skus() == null || command.skus().isEmpty()) throw new CatalogValidationException("At least one SKU is required");
-        for (UpdateSkuCommand sku : command.skus()) updateSkuForProduct(command.productId(), sku);
+        if (command.skus() != null) for (UpdateSkuCommand sku : command.skus()) updateSkuForProduct(command.productId(), sku);
         return findProduct(command.productId()).orElseThrow();
     }
 
@@ -92,6 +114,8 @@ public class CatalogService {
         if (barcode == null || barcode.isBlank()) return Optional.empty();
         return repository.findSkuByBarcode(barcode.trim());
     }
+
+    public Optional<SkuView> findSku(UUID skuId) { return skuId == null ? Optional.empty() : repository.findSku(skuId); }
 
     @Transactional
     public void setSkuEnabled(UUID skuId, boolean enabled) {
@@ -107,6 +131,7 @@ public class CatalogService {
     public CategoryView updateCategory(UUID id, String name, int sortOrder, boolean enabled) {
         if (id == null || !repository.categoryExists(id)) throw new CatalogNotFoundException("Category not found");
         String normalized = required(name, "Category name");
+        if (repository.categoryNameExistsExcept(normalized, id)) throw new DuplicateCatalogFieldException("Category name already exists");
         repository.updateCategory(id, normalized, sortOrder, enabled, now());
         return repository.findCategories().stream().filter(category -> category.id().equals(id)).findFirst().orElseThrow();
     }
@@ -115,6 +140,7 @@ public class CatalogService {
     public BrandView updateBrand(UUID id, String name, String remark, boolean enabled) {
         if (id == null || !repository.brandExists(id)) throw new CatalogNotFoundException("Brand not found");
         String normalized = required(name, "Brand name");
+        if (repository.brandNameExistsExcept(normalized, id)) throw new DuplicateCatalogFieldException("Brand name already exists");
         repository.updateBrand(id, normalized, nullableTrim(remark), enabled, now());
         return repository.findBrands().stream().filter(brand -> brand.id().equals(id)).findFirst().orElseThrow();
     }
@@ -125,7 +151,11 @@ public class CatalogService {
 
     public PageView<ProductView> products(int page, int size) {
         if (page < 0 || size < 1 || size > 100) throw new CatalogValidationException("Invalid page or size");
-        return new PageView<>(repository.findProducts(size, page * size).stream().map(this::productView).toList(),
+        final int offset;
+        try { offset = Math.toIntExact(Math.multiplyExact((long) page, size)); }
+        catch (ArithmeticException exception) { throw new CatalogValidationException("Invalid page or size"); }
+        List<CatalogRepository.ProductRow> rows = repository.findProducts(size, offset);
+        return new PageView<>(productViews(rows),
                 repository.countProducts(), page, size);
     }
 
@@ -155,6 +185,13 @@ public class CatalogService {
     private ProductView productView(CatalogRepository.ProductRow row) {
         return new ProductView(row.id(), row.name(), row.categoryId(), row.brandId(), row.imageUrl(), row.description(),
                 row.enabled(), repository.findSkusBySpu(row.id()));
+    }
+
+    private List<ProductView> productViews(List<CatalogRepository.ProductRow> rows) {
+        Map<UUID, List<SkuView>> skus = repository.findSkusBySpuIds(rows.stream().map(CatalogRepository.ProductRow::id).toList())
+                .stream().collect(java.util.stream.Collectors.groupingBy(SkuView::spuId));
+        return rows.stream().map(row -> new ProductView(row.id(), row.name(), row.categoryId(), row.brandId(), row.imageUrl(),
+                row.description(), row.enabled(), skus.getOrDefault(row.id(), List.of()))).toList();
     }
 
     private void validateQuickCreate(QuickCreateSkuCommand command) {
