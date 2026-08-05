@@ -14,8 +14,7 @@ public final class InboundModels {
     public record InboundLineInput(UUID skuId, int quantity, BigDecimal unitCost) {
     }
 
-    public record ConfirmInboundCommand(String requestId, String occurredAt, String remark,
-                                        List<InboundLineInput> lines) {
+    public record ConfirmInboundCommand(String requestId, String remark, List<InboundLineInput> lines) {
     }
 
     public record InboundLineView(UUID id, UUID skuId, String skuCode, String barcode, String productName,

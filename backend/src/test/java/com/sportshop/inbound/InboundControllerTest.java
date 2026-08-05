@@ -14,13 +14,21 @@ import com.sportshop.catalog.CatalogModels.SkuView;
 import com.sportshop.catalog.CatalogService;
 import com.sportshop.support.DatabaseTestSupport;
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -30,7 +38,10 @@ import org.springframework.test.web.servlet.MvcResult;
 
 @SpringBootTest
 @AutoConfigureMockMvc
+@Import(InboundControllerTest.MutableClockConfiguration.class)
 class InboundControllerTest {
+
+    private static final String DEFAULT_SERVER_TIME = "2026-08-04T16:30:00Z";
 
     @DynamicPropertySource
     static void databaseProperties(DynamicPropertyRegistry registry) {
@@ -40,9 +51,11 @@ class InboundControllerTest {
     @Autowired MockMvc mvc;
     @Autowired CatalogService catalogService;
     @Autowired JdbcClient jdbc;
+    @Autowired MutableClock clock;
 
     @BeforeEach
     void clearInboundTransactions() {
+        clock.set(DEFAULT_SERVER_TIME);
         jdbc.sql("DELETE FROM stock_movement").update();
         jdbc.sql("DELETE FROM inbound_line").update();
         jdbc.sql("DELETE FROM inbound_order").update();
@@ -53,12 +66,13 @@ class InboundControllerTest {
     void createsOnceAndReturnsOkWithTheSameReceiptForAnIdempotentReplay() throws Exception {
         SkuView sku = createSku("http-create", "HTTP-IN-1", "6900000002101");
         String key = UUID.randomUUID().toString();
-        String body = body(sku.id(), "2026-08-05T10:15:30Z", 3, "20.00");
+        String body = body(sku.id(), 3, "20.00");
 
         MvcResult created = mvc.perform(post("/api/inbounds").header("Idempotency-Key", key)
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isCreated()).andExpect(header().exists("Location"))
                 .andExpect(jsonPath("$.orderNo").value("IN-20260805-000001"))
+                .andExpect(jsonPath("$.occurredAt").value(DEFAULT_SERVER_TIME))
                 .andExpect(jsonPath("$.totalQuantity").value(3))
                 .andExpect(jsonPath("$.totalAmount").value(60.00)).andReturn();
         String id = json(created, "$.id");
@@ -75,19 +89,19 @@ class InboundControllerTest {
         String key = UUID.randomUUID().toString();
         mvc.perform(post("/api/inbounds").header("Idempotency-Key", key)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(body(sku.id(), "2026-08-05T10:15:30Z", 1, "10.00")))
+                        .content(body(sku.id(), 1, "10.00")))
                 .andExpect(status().isCreated());
 
         mvc.perform(post("/api/inbounds").header("Idempotency-Key", key)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(body(sku.id(), "2026-08-05T10:15:30Z", 2, "10.00")))
+                        .content(body(sku.id(), 2, "10.00")))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.status").value(409));
         mvc.perform(post("/api/inbounds").header("Idempotency-Key", UUID.randomUUID().toString())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(body(sku.id(), "2026-08-05T10:15:30Z", 0, "10.00")))
+                        .content(body(sku.id(), 0, "10.00")))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.status").value(400));
         mvc.perform(post("/api/inbounds").contentType(MediaType.APPLICATION_JSON)
-                        .content(body(sku.id(), "2026-08-05T10:15:30Z", 1, "10.00")))
+                        .content(body(sku.id(), 1, "10.00")))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.status").value(400));
     }
 
@@ -99,6 +113,35 @@ class InboundControllerTest {
                 () -> expectBadRequest(bodyWithRawValues(sku.id(), "1.5", "10.00")),
                 () -> expectBadRequest(bodyWithRawValues(sku.id(), "\"2\"", "10.00")),
                 () -> expectBadRequest(bodyWithRawValues(sku.id(), "2", "\"10.00\"")));
+    }
+
+    @Test
+    void ignoresClientOccurredAtAndUsesTheServerClock() throws Exception {
+        SkuView sku = createSku("http-server-time", "HTTP-IN-TIME", "6900000002105");
+        String maliciousClientTime = "1999-12-31T23:59:59Z";
+
+        mvc.perform(post("/api/inbounds").header("Idempotency-Key", UUID.randomUUID().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(bodyWithOccurredAt(sku.id(), maliciousClientTime, 1, "10.00")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.occurredAt").value(DEFAULT_SERVER_TIME))
+                .andExpect(jsonPath("$.createdAt").value(DEFAULT_SERVER_TIME))
+                .andExpect(jsonPath("$.orderNo").value("IN-20260805-000001"));
+    }
+
+    @Test
+    void enforcesExplicitIdempotencyKeyAndRemarkLengthLimits() throws Exception {
+        SkuView sku = createSku("http-lengths", "HTTP-IN-LENGTHS", "6900000002106");
+
+        mvc.perform(post("/api/inbounds").header("Idempotency-Key", "k".repeat(128))
+                        .contentType(MediaType.APPLICATION_JSON).content(body(sku.id(), "r".repeat(500), 1, "10.00")))
+                .andExpect(status().isCreated());
+        mvc.perform(post("/api/inbounds").header("Idempotency-Key", "k".repeat(129))
+                        .contentType(MediaType.APPLICATION_JSON).content(body(sku.id(), 1, "10.00")))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.status").value(400));
+        mvc.perform(post("/api/inbounds").header("Idempotency-Key", UUID.randomUUID().toString())
+                        .contentType(MediaType.APPLICATION_JSON).content(body(sku.id(), "r".repeat(501), 1, "10.00")))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.status").value(400));
     }
 
     @Test
@@ -144,8 +187,9 @@ class InboundControllerTest {
     }
 
     private MvcResult postInbound(UUID skuId, String occurredAt, int quantity, String cost) throws Exception {
+        clock.set(occurredAt);
         return mvc.perform(post("/api/inbounds").header("Idempotency-Key", UUID.randomUUID().toString())
-                        .contentType(MediaType.APPLICATION_JSON).content(body(skuId, occurredAt, quantity, cost)))
+                        .contentType(MediaType.APPLICATION_JSON).content(body(skuId, quantity, cost)))
                 .andExpect(status().isCreated()).andReturn();
     }
 
@@ -156,7 +200,19 @@ class InboundControllerTest {
                 skuCode, barcode, Map.of("size", "M"), new BigDecimal("99.00"), 3));
     }
 
-    private static String body(UUID skuId, String occurredAt, int quantity, String cost) {
+    private static String body(UUID skuId, int quantity, String cost) {
+        return body(skuId, "web inbound", quantity, cost);
+    }
+
+    private static String body(UUID skuId, String remark, int quantity, String cost) {
+        return """
+                {"remark":"%s","lines":[
+                  {"skuId":"%s","quantity":%d,"unitCost":%s}
+                ]}
+                """.formatted(remark, skuId, quantity, cost);
+    }
+
+    private static String bodyWithOccurredAt(UUID skuId, String occurredAt, int quantity, String cost) {
         return """
                 {"occurredAt":"%s","remark":"web inbound","lines":[
                   {"skuId":"%s","quantity":%d,"unitCost":%s}
@@ -172,7 +228,7 @@ class InboundControllerTest {
 
     private static String bodyWithRawValues(UUID skuId, String quantity, String unitCost) {
         return """
-                {"occurredAt":"2026-08-05T10:15:30Z","lines":[
+                {"lines":[
                   {"skuId":"%s","quantity":%s,"unitCost":%s}
                 ]}
                 """.formatted(skuId, quantity, unitCost);
@@ -180,5 +236,42 @@ class InboundControllerTest {
 
     private static String json(MvcResult result, String expression) throws Exception {
         return com.jayway.jsonpath.JsonPath.read(result.getResponse().getContentAsString(), expression).toString();
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class MutableClockConfiguration {
+        @Bean
+        @Primary
+        MutableClock inboundClock() {
+            return new MutableClock(Instant.parse(DEFAULT_SERVER_TIME));
+        }
+    }
+
+    static final class MutableClock extends Clock {
+        private volatile Instant current;
+
+        MutableClock(Instant current) {
+            this.current = current;
+        }
+
+        void set(String instant) {
+            current = Instant.parse(instant);
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            if (!ZoneOffset.UTC.equals(zone)) throw new UnsupportedOperationException("Only UTC is supported");
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return current;
+        }
     }
 }

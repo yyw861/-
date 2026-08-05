@@ -12,6 +12,9 @@ import com.sportshop.shared.idempotency.IdempotencyService;
 import com.sportshop.shared.idempotency.IdempotencyService.IdempotencyConflictException;
 import com.sportshop.support.DatabaseTestSupport;
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -23,14 +26,19 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.IllegalTransactionStateException;
 
 @SpringBootTest
+@Import(InboundServiceTest.FixedClockConfiguration.class)
 class InboundServiceTest {
 
-    private static final String OCCURRED_AT = "2026-08-05T10:15:30Z";
+    private static final String SERVER_TIME = "2026-08-04T16:30:00Z";
 
     @DynamicPropertySource
     static void databaseProperties(DynamicPropertyRegistry registry) {
@@ -61,6 +69,7 @@ class InboundServiceTest {
                 new InboundLineInput(fresh.id(), 2, new BigDecimal("25.00")))));
 
         assertThat(receipt.orderNo()).isEqualTo("IN-20260805-000001");
+        assertThat(receipt.occurredAt()).isEqualTo(SERVER_TIME);
         assertThat(receipt.totalQuantity()).isEqualTo(7);
         assertThat(receipt.totalAmount()).isEqualByComparingTo("700.00");
         assertThat(receipt.status()).isEqualTo("CONFIRMED");
@@ -70,6 +79,21 @@ class InboundServiceTest {
         assertThat(jdbc.sql("SELECT sku_id FROM stock_movement WHERE document_id = :id ORDER BY rowid")
                 .param("id", receipt.id().toString()).query(String.class).list())
                 .containsExactly(weighted.id().toString(), fresh.id().toString());
+    }
+
+    @Test
+    void usesTheInjectedServerClockForDocumentNumberAndAllBusinessTimestamps() {
+        SkuView sku = createSku("server-time", "IN-SERVER-TIME", "6900000002009");
+
+        var receipt = inboundService.confirm(new ConfirmInboundCommand(UUID.randomUUID().toString(),
+                "server controlled", List.of(
+                new InboundLineInput(sku.id(), 1, new BigDecimal("10.00")))));
+
+        assertThat(receipt.occurredAt()).isEqualTo(SERVER_TIME);
+        assertThat(receipt.createdAt()).isEqualTo(SERVER_TIME);
+        assertThat(receipt.orderNo()).isEqualTo("IN-20260805-000001");
+        assertThat(jdbc.sql("SELECT occurred_at FROM stock_movement WHERE document_id = :id")
+                .param("id", receipt.id().toString()).query(String.class).single()).isEqualTo(SERVER_TIME);
     }
 
     @Test
@@ -210,7 +234,7 @@ class InboundServiceTest {
     }
 
     private ConfirmInboundCommand command(String requestId, List<InboundLineInput> lines) {
-        return new ConfirmInboundCommand(requestId, OCCURRED_AT, " first inbound ", lines);
+        return new ConfirmInboundCommand(requestId, " first inbound ", lines);
     }
 
     private SkuView createSku(String productName, String skuCode, String barcode) {
@@ -239,5 +263,14 @@ class InboundServiceTest {
     private int countBy(String table, String column, String value) {
         return jdbc.sql("SELECT COUNT(*) FROM " + table + " WHERE " + column + " = :value")
                 .param("value", value).query(Integer.class).single();
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class FixedClockConfiguration {
+        @Bean
+        @Primary
+        Clock inboundClock() {
+            return Clock.fixed(Instant.parse(SERVER_TIME), ZoneOffset.UTC);
+        }
     }
 }

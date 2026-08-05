@@ -18,14 +18,11 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
 import java.time.ZoneId;
-import java.time.format.DateTimeParseException;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,18 +31,14 @@ public class InboundService {
 
     private static final String RESOURCE_TYPE = "INBOUND";
     private static final ZoneId SHOP_ZONE = ZoneId.of("Asia/Shanghai");
+    private static final int MAX_IDEMPOTENCY_KEY_LENGTH = 128;
+    private static final int MAX_REMARK_LENGTH = 500;
 
     private final InboundRepository repository;
     private final InventoryService inventoryService;
     private final CatalogService catalogService;
     private final IdempotencyService idempotencyService;
     private final Clock clock;
-
-    @Autowired
-    InboundService(InboundRepository repository, InventoryService inventoryService, CatalogService catalogService,
-                   IdempotencyService idempotencyService) {
-        this(repository, inventoryService, catalogService, idempotencyService, Clock.systemUTC());
-    }
 
     InboundService(InboundRepository repository, InventoryService inventoryService, CatalogService catalogService,
                    IdempotencyService idempotencyService, Clock clock) {
@@ -64,22 +57,24 @@ public class InboundService {
     @Transactional
     public ConfirmationResult confirmWithStatus(ConfirmInboundCommand command) {
         ValidatedCommand validated = validate(command);
+        Instant timestamp = Instant.now(clock);
+        String occurredAt = timestamp.toString();
+        LocalDate businessDate = timestamp.atZone(SHOP_ZONE).toLocalDate();
         UUID proposedId = UUID.randomUUID();
-        String createdAt = now();
         var claim = idempotencyService.claim(validated.requestId(), RESOURCE_TYPE, proposedId,
-                requestHash(validated), createdAt);
+                requestHash(validated), occurredAt);
         if (!claim.claimed()) {
             return new ConfirmationResult(receipt(claim.resourceId()), false);
         }
 
         validateCatalog(validated.lines());
-        String orderNo = repository.nextOrderNumber(validated.businessDate());
-        repository.insertOrder(claim.resourceId(), orderNo, validated.occurredAt(), validated.totalQuantity(),
-                validated.totalAmount(), validated.remark(), createdAt);
+        String orderNo = repository.nextOrderNumber(businessDate);
+        repository.insertOrder(claim.resourceId(), orderNo, occurredAt, validated.totalQuantity(),
+                validated.totalAmount(), validated.remark(), occurredAt);
         for (ValidatedLine line : validated.lines()) {
             repository.insertLine(claim.resourceId(), line.skuId(), line.quantity(), line.unitCost(), line.subtotal());
             inventoryService.receive(line.skuId(), line.quantity(), line.unitCost(),
-                    new MovementSource(RESOURCE_TYPE, claim.resourceId().toString(), orderNo, validated.occurredAt()));
+                    new MovementSource(RESOURCE_TYPE, claim.resourceId().toString(), orderNo, occurredAt));
         }
         return new ConfirmationResult(receipt(claim.resourceId()), true);
     }
@@ -98,7 +93,9 @@ public class InboundService {
     private ValidatedCommand validate(ConfirmInboundCommand command) {
         if (command == null) throw new InboundValidationException("Request body is required");
         String requestId = required(command.requestId(), "Idempotency key");
-        ParsedTime time = parseTime(command.occurredAt());
+        if (requestId.length() > MAX_IDEMPOTENCY_KEY_LENGTH) {
+            throw new InboundValidationException("Idempotency key must not exceed 128 characters");
+        }
         if (command.lines() == null || command.lines().isEmpty()) {
             throw new InboundValidationException("At least one inbound line is required");
         }
@@ -115,8 +112,11 @@ public class InboundService {
         catch (ArithmeticException exception) {
             throw new InboundValidationException("Inbound totals exceed the supported range");
         }
-        return new ValidatedCommand(requestId, time.instant(), time.businessDate(), nullableTrim(command.remark()),
-                lines, totalQuantity, totalAmount);
+        String remark = nullableTrim(command.remark());
+        if (remark != null && remark.length() > MAX_REMARK_LENGTH) {
+            throw new InboundValidationException("Remark must not exceed 500 characters");
+        }
+        return new ValidatedCommand(requestId, remark, lines, totalQuantity, totalAmount);
     }
 
     private ValidatedLine validateLine(InboundLineInput line, HashSet<UUID> seenSkus) {
@@ -160,25 +160,12 @@ public class InboundService {
                 query.page(), query.size());
     }
 
-    private static ParsedTime parseTime(String occurredAt) {
-        String value = required(occurredAt, "Occurred time");
-        try {
-            OffsetDateTime parsed = OffsetDateTime.parse(value);
-            Instant instant = parsed.toInstant();
-            return new ParsedTime(instant.toString(), instant.atZone(SHOP_ZONE).toLocalDate());
-        }
-        catch (DateTimeParseException exception) {
-            throw new InboundValidationException("Occurred time must be an ISO-8601 timestamp with an offset");
-        }
-    }
-
     private InboundReceipt receipt(UUID id) {
         return repository.findReceipt(id).orElseThrow(() -> new InboundNotFoundException("Inbound order not found"));
     }
 
     private static String requestHash(ValidatedCommand command) {
         StringBuilder canonical = new StringBuilder();
-        append(canonical, command.occurredAt());
         append(canonical, command.remark() == null ? "" : command.remark());
         for (ValidatedLine line : command.lines()) {
             append(canonical, line.skuId().toString());
@@ -210,18 +197,11 @@ public class InboundService {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    private String now() {
-        return Instant.now(clock).toString();
-    }
-
-    private record ParsedTime(String instant, LocalDate businessDate) {
-    }
-
     private record ValidatedLine(UUID skuId, int quantity, BigDecimal unitCost, BigDecimal subtotal) {
     }
 
-    private record ValidatedCommand(String requestId, String occurredAt, LocalDate businessDate, String remark,
-                                    List<ValidatedLine> lines, int totalQuantity, BigDecimal totalAmount) {
+    private record ValidatedCommand(String requestId, String remark, List<ValidatedLine> lines,
+                                    int totalQuantity, BigDecimal totalAmount) {
     }
 
     static class InboundValidationException extends RuntimeException {

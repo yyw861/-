@@ -41,8 +41,8 @@ public class InboundController {
     ResponseEntity<InboundReceipt> confirm(@RequestHeader("Idempotency-Key") String requestId,
                                            @RequestBody ConfirmInboundRequest request) {
         if (request == null) throw new InboundService.InboundValidationException("Request body is required");
-        var result = inboundService.confirmWithStatus(new ConfirmInboundCommand(requestId, request.occurredAt(),
-                request.remark(), inboundLines(request.lines())));
+        var result = inboundService.confirmWithStatus(new ConfirmInboundCommand(requestId, request.remark(),
+                inboundLines(request.lines())));
         if (result.created()) {
             return ResponseEntity.created(URI.create("/api/inbounds/" + result.receipt().id())).body(result.receipt());
         }
@@ -87,7 +87,7 @@ public class InboundController {
         return value.decimalValue();
     }
 
-    record ConfirmInboundRequest(String occurredAt, String remark, List<InboundLineRequest> lines) {
+    record ConfirmInboundRequest(String remark, List<InboundLineRequest> lines) {
     }
 
     record InboundLineRequest(UUID skuId, JsonNode quantity, JsonNode unitCost) {
