@@ -1,0 +1,4 @@
+spring:
+  datasource:
+    url: jdbc:sqlite:${SPORTSHOP_DATA_DIR:./data}/sportshop.db
+    driver-class-name: org.sqlite.JDBC
