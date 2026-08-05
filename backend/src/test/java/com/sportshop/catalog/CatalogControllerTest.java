@@ -111,6 +111,40 @@ class CatalogControllerTest {
         org.assertj.core.api.Assertions.assertThat(response.getBody().getStatus()).isEqualTo(409);
     }
 
+    @Test
+    void patchDistinguishesMissingNullAndValueForNullableFields() throws Exception {
+        String categoryId = id(postJson("/api/categories", "{\"name\":\"tri-category\"}"));
+        String brandId = id(postJson("/api/brands", "{\"name\":\"tri-brand\"}"));
+        mvc.perform(patch("/api/brands/{id}", brandId).contentType(MediaType.APPLICATION_JSON).content("{\"remark\":\"keep\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.remark").value("keep"));
+        mvc.perform(patch("/api/brands/{id}", brandId).contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.remark").value("keep"));
+        mvc.perform(patch("/api/brands/{id}", brandId).contentType(MediaType.APPLICATION_JSON).content("{\"remark\":null}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.remark").doesNotExist());
+
+        MvcResult product = postJson("/api/catalog/products", """
+                {"categoryId":"%s","brandId":"%s","productName":"Tri product","imageUrl":"https://img/old","description":"old"}
+                """.formatted(categoryId, brandId));
+        String productId = id(product);
+        mvc.perform(patch("/api/catalog/products/{id}", productId).contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.imageUrl").value("https://img/old")).andExpect(jsonPath("$.description").value("old"));
+        mvc.perform(patch("/api/catalog/products/{id}", productId).contentType(MediaType.APPLICATION_JSON).content("{\"imageUrl\":null,\"description\":null}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.imageUrl").doesNotExist()).andExpect(jsonPath("$.description").doesNotExist());
+        mvc.perform(patch("/api/catalog/products/{id}", productId).contentType(MediaType.APPLICATION_JSON).content("{\"description\":\"new\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.description").value("new"));
+
+        MvcResult sku = postJson("/api/catalog/skus/quick-create", """
+                {"categoryId":"%s","brandId":"%s","productName":"Tri SKU","skuCode":"TRI-1","barcode":"6900000000601","specs":{"color":"black"},"retailPrice":9.00,"warningStock":1}
+                """.formatted(categoryId, brandId));
+        String skuId = id(sku);
+        mvc.perform(patch("/api/catalog/skus/{id}", skuId).contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.specs.color").value("black"));
+        mvc.perform(patch("/api/catalog/skus/{id}", skuId).contentType(MediaType.APPLICATION_JSON).content("{\"specs\":null}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.specs").isEmpty());
+        mvc.perform(patch("/api/catalog/skus/{id}", skuId).contentType(MediaType.APPLICATION_JSON).content("{\"specs\":{\"size\":\"42\"}}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.specs.size").value("42"));
+    }
+
     private MvcResult postJson(String path, String body) throws Exception {
         return mvc.perform(post(path).contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isCreated()).andReturn();

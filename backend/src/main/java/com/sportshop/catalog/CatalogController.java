@@ -13,6 +13,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import com.fasterxml.jackson.annotation.JsonSetter;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -70,7 +71,7 @@ public class CatalogController {
         BrandView current = catalogService.brands().stream().filter(value -> value.id().equals(id)).findFirst()
                 .orElseThrow(() -> new CatalogNotFoundException("Brand not found"));
         return catalogService.updateBrand(id, request.name() == null ? current.name() : request.name(),
-                request.remark() == null ? current.remark() : request.remark(),
+                request.remarkPresent() ? request.remark() : current.remark(),
                 request.enabled() == null ? current.enabled() : request.enabled());
     }
 
@@ -97,8 +98,8 @@ public class CatalogController {
                 request.productName() == null ? current.name() : request.productName(),
                 request.categoryId() == null ? current.categoryId() : request.categoryId(),
                 request.brandId() == null ? current.brandId() : request.brandId(),
-                request.imageUrl() == null ? current.imageUrl() : request.imageUrl(),
-                request.description() == null ? current.description() : request.description(),
+                request.imageUrlPresent() ? request.imageUrl() : current.imageUrl(),
+                request.descriptionPresent() ? request.description() : current.description(),
                 request.enabled() == null ? current.enabled() : request.enabled(),
                 request.skus() == null ? current.skus().stream().map(sku -> new UpdateSkuCommand(sku.id(), sku.skuCode(),
                         sku.barcode(), sku.specs(), sku.retailPrice(), sku.warningStock(), sku.enabled())).toList() : request.skus()));
@@ -120,7 +121,7 @@ public class CatalogController {
         return catalogService.updateSku(id, new UpdateSkuCommand(id,
                 request.skuCode() == null ? current.skuCode() : request.skuCode(),
                 request.barcode() == null ? current.barcode() : request.barcode(),
-                request.specs() == null ? current.specs() : request.specs(),
+                request.specsPresent() ? request.specs() : current.specs(),
                 request.retailPrice() == null ? current.retailPrice() : request.retailPrice(),
                 request.warningStock() == null ? current.warningStock() : request.warningStock(),
                 request.enabled() == null ? current.enabled() : request.enabled()));
@@ -139,15 +140,69 @@ public class CatalogController {
     public record CategoryPatchRequest(String name, Integer sortOrder, Boolean enabled) {
     }
 
-    public record BrandPatchRequest(String name, String remark, Boolean enabled) {
+    public static final class BrandPatchRequest {
+        private String name;
+        private String remark;
+        private Boolean enabled;
+        private boolean remarkPresent;
+        public String name() { return name; }
+        public String remark() { return remark; }
+        public Boolean enabled() { return enabled; }
+        public boolean remarkPresent() { return remarkPresent; }
+        public void setName(String name) { this.name = name; }
+        @JsonSetter("remark") public void setRemark(String remark) { this.remark = remark; this.remarkPresent = true; }
+        public void setEnabled(Boolean enabled) { this.enabled = enabled; }
     }
 
-    public record ProductPatchRequest(String productName, UUID categoryId, UUID brandId, String imageUrl,
-                                      String description, Boolean enabled, List<UpdateSkuCommand> skus) {
+    public static final class ProductPatchRequest {
+        private String productName;
+        private UUID categoryId;
+        private UUID brandId;
+        private String imageUrl;
+        private String description;
+        private Boolean enabled;
+        private List<UpdateSkuCommand> skus;
+        private boolean imageUrlPresent;
+        private boolean descriptionPresent;
+        public String productName() { return productName; }
+        public UUID categoryId() { return categoryId; }
+        public UUID brandId() { return brandId; }
+        public String imageUrl() { return imageUrl; }
+        public String description() { return description; }
+        public Boolean enabled() { return enabled; }
+        public List<UpdateSkuCommand> skus() { return skus; }
+        public boolean imageUrlPresent() { return imageUrlPresent; }
+        public boolean descriptionPresent() { return descriptionPresent; }
+        public void setProductName(String value) { productName = value; }
+        public void setCategoryId(UUID value) { categoryId = value; }
+        public void setBrandId(UUID value) { brandId = value; }
+        @JsonSetter("imageUrl") public void setImageUrl(String value) { imageUrl = value; imageUrlPresent = true; }
+        @JsonSetter("description") public void setDescription(String value) { description = value; descriptionPresent = true; }
+        public void setEnabled(Boolean value) { enabled = value; }
+        public void setSkus(List<UpdateSkuCommand> value) { skus = value; }
     }
 
-    public record SkuPatchRequest(String skuCode, String barcode, Map<String, String> specs, BigDecimal retailPrice,
-                                  Integer warningStock, Boolean enabled) {
+    public static final class SkuPatchRequest {
+        private String skuCode;
+        private String barcode;
+        private Map<String, String> specs;
+        private BigDecimal retailPrice;
+        private Integer warningStock;
+        private Boolean enabled;
+        private boolean specsPresent;
+        public String skuCode() { return skuCode; }
+        public String barcode() { return barcode; }
+        public Map<String, String> specs() { return specs; }
+        public BigDecimal retailPrice() { return retailPrice; }
+        public Integer warningStock() { return warningStock; }
+        public Boolean enabled() { return enabled; }
+        public boolean specsPresent() { return specsPresent; }
+        public void setSkuCode(String value) { skuCode = value; }
+        public void setBarcode(String value) { barcode = value; }
+        @JsonSetter("specs") public void setSpecs(Map<String, String> value) { specs = value; specsPresent = true; }
+        public void setRetailPrice(BigDecimal value) { retailPrice = value; }
+        public void setWarningStock(Integer value) { warningStock = value; }
+        public void setEnabled(Boolean value) { enabled = value; }
     }
 
     public record EnabledRequest(Boolean enabled) {
