@@ -9,6 +9,21 @@ const router = createRouter({
       name: 'home',
       component: () => h('main', '首页'),
     },
+    {
+      path: '/catalog',
+      name: 'catalog',
+      component: () => import('@/modules/catalog/views/CatalogView.vue'),
+    },
+    {
+      path: '/inbounds',
+      name: 'inbound',
+      component: () => import('@/modules/inbound/views/InboundView.vue'),
+    },
+    {
+      path: '/inbounds/history',
+      name: 'inbound-history',
+      component: () => import('@/modules/inbound/views/InboundHistoryView.vue'),
+    },
   ],
 })
 
