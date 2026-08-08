@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { ElDialog } from 'element-plus'
 
 import { errorMessage, quickCreateSku } from '../api'
 import type { Brand, Category, Product, Sku } from '../types'
@@ -27,6 +28,10 @@ watch(() => [props.open, props.barcode], async () => {
   await nextTick()
   productNameInput.value?.focus()
 })
+
+function focusProductName() {
+  window.setTimeout(() => productNameInput.value?.focus(), 0)
+}
 
 watch(() => form.existingSpuId, (id) => {
   if (!id) return
@@ -85,8 +90,18 @@ async function save() {
 </script>
 
 <template>
-  <div v-if="open" data-testid="quick-create-dialog" class="overlay" role="dialog" aria-modal="true" aria-labelledby="quick-title">
-    <form class="dialog" @submit.prevent="save" @keydown.esc="$emit('close')">
+  <ElDialog
+    v-if="open"
+    data-testid="quick-create-dialog"
+    :model-value="true"
+    :show-close="false"
+    :close-on-click-modal="false"
+    width="min(48rem, calc(100% - 2rem))"
+    @close="$emit('close')"
+    @opened="focusProductName"
+    @open-auto-focus="focusProductName"
+  >
+    <form class="quick-form" @submit.prevent="save">
       <header><div><p class="eyebrow">未知条码</p><h2 id="quick-title">快速建档</h2></div><button data-testid="quick-close" type="button" class="close" aria-label="关闭" @click="$emit('close')">×</button></header>
       <p v-if="error" role="alert" class="alert">{{ error }}</p>
       <div class="grid">
@@ -104,12 +119,11 @@ async function save() {
       </div>
       <footer><button type="button" class="secondary" @click="$emit('close')">取消</button><button data-testid="quick-save" type="button" :disabled="saving" @click="save">{{ saving ? '创建中…' : '创建并回填' }}</button></footer>
     </form>
-  </div>
+  </ElDialog>
 </template>
 
 <style scoped>
-.overlay { position: fixed; inset: 0; z-index: 20; background: rgb(15 23 42 / .5); display: grid; place-items: center; padding: 1rem; }
-.dialog { width: min(48rem, 100%); background: white; border-radius: .8rem; padding: 1.25rem; box-shadow: 0 25px 50px rgb(15 23 42 / .25); }
+.quick-form { width: 100%; }
 header, footer { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
 h2, .eyebrow { margin: 0; }.eyebrow { color: #2563eb; font-size: .8rem; font-weight: 700; }
 .close { border: 0; background: none; font-size: 1.6rem; }.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; }

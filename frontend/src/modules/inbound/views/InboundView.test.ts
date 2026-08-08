@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import InboundView from './InboundView.vue'
+import BarcodeInput from '../components/BarcodeInput.vue'
 import { useInboundDraftStore } from '../stores/inboundDraft'
 
 const catalogApi = vi.hoisted(() => ({
@@ -60,7 +61,7 @@ describe('InboundView', () => {
     expect(wrapper.get('[data-testid="scan-submit"]').attributes('disabled')).toBeDefined()
   })
 
-  it('finds a same-category barcode, clears and refocuses the scanner, then adds a priced line', async () => {
+  it('locks scanning while a known SKU is pending, moves quantity to cost, then restores scanning after adding', async () => {
     catalogApi.findSkuByBarcode.mockResolvedValue(sku)
     const wrapper = mountView()
     await flushPromises()
@@ -71,15 +72,25 @@ describe('InboundView', () => {
     await flushPromises()
 
     expect((barcode.element as HTMLInputElement).value).toBe('')
-    expect(document.activeElement).toBe(barcode.element)
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="pending-quantity"]').element)
+    expect(barcode.attributes('disabled')).toBeDefined()
     expect(wrapper.text()).toContain('训练篮球')
 
+    wrapper.getComponent(BarcodeInput).vm.$emit('submit', 'SECOND-BARCODE')
+    await flushPromises()
+    expect(catalogApi.findSkuByBarcode).toHaveBeenCalledTimes(1)
+
     await wrapper.get('[data-testid="pending-quantity"]').setValue('2')
+    await wrapper.get('[data-testid="pending-quantity"]').trigger('keydown', { key: 'Enter' })
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="pending-unit-cost"]').element)
     await wrapper.get('[data-testid="pending-unit-cost"]').setValue('80')
     await wrapper.get('[data-testid="add-line"]').trigger('click')
+    await flushPromises()
 
     expect(wrapper.get('[data-testid="draft-table"]').text()).toContain('BALL-01')
     expect(wrapper.get('[data-testid="draft-table"]').text()).toContain('2')
+    expect(wrapper.find('[data-testid="pending-sku"]').exists()).toBe(false)
+    expect(document.activeElement).toBe(barcode.element)
   })
 
   it('opens quick create for an unknown barcode with its category locked', async () => {
@@ -95,11 +106,38 @@ describe('InboundView', () => {
     expect(wrapper.get('[data-testid="quick-category"]').attributes('disabled')).toBeDefined()
     expect((wrapper.get('[data-testid="quick-barcode"]').element as HTMLInputElement).value).toBe('UNKNOWN-1')
     expect(wrapper.get('[data-testid="barcode-input"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="category-select"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('.el-dialog').exists()).toBe(true)
     expect(document.activeElement).toBe(wrapper.get('[data-testid="quick-product-name"]').element)
 
     await wrapper.get('[data-testid="quick-close"]').trigger('click')
     await flushPromises()
     expect(document.activeElement).toBe(wrapper.get('[data-testid="barcode-input"]').element)
+  })
+
+  it('submits an unknown barcode against its scanned category snapshot even if backing selection changes', async () => {
+    const newSku = { ...sku, id: 'sku-snapshot', spuId: 'spu-snapshot', barcode: 'SNAPSHOT-1' }
+    catalogApi.findSkuByBarcode.mockRejectedValue({ response: { status: 404 } })
+    catalogApi.quickCreateSku.mockResolvedValue(newSku)
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-testid="category-select"]').setValue(categoryA.id)
+    await wrapper.get('[data-testid="barcode-input"]').setValue('SNAPSHOT-1')
+    await wrapper.get('[data-testid="scan-form"]').trigger('submit')
+    await flushPromises()
+
+    useInboundDraftStore().selectCategory(categoryB.id)
+    await flushPromises()
+    expect((wrapper.get('[data-testid="quick-category"]').element as HTMLInputElement).value).toBe(categoryA.name)
+    await wrapper.get('[data-testid="quick-product-name"]').setValue('快照篮球')
+    await wrapper.get('[data-testid="quick-sku-code"]').setValue('SNAP-1')
+    await wrapper.get('[data-testid="quick-retail-price"]').setValue('88')
+    await wrapper.get('[data-testid="quick-save"]').trigger('click')
+    await flushPromises()
+
+    expect(catalogApi.quickCreateSku).toHaveBeenCalledWith(expect.objectContaining({
+      categoryId: categoryA.id, barcode: 'SNAPSHOT-1', productName: '快照篮球',
+    }))
   })
 
   it('backfills a newly created SKU but still requires quantity and cost before adding stock', async () => {

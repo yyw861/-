@@ -6,7 +6,7 @@ import CatalogView from './CatalogView.vue'
 const api = vi.hoisted(() => ({
   getCategories: vi.fn(), getBrands: vi.fn(), getProducts: vi.fn(),
   createCategory: vi.fn(), updateCategory: vi.fn(), createBrand: vi.fn(), updateBrand: vi.fn(),
-  createProduct: vi.fn(), updateProduct: vi.fn(), updateSku: vi.fn(), setSkuEnabled: vi.fn(),
+  createProduct: vi.fn(), quickCreateSku: vi.fn(), updateProduct: vi.fn(), updateSku: vi.fn(), setSkuEnabled: vi.fn(),
 }))
 
 vi.mock('../api', () => api)
@@ -147,5 +147,45 @@ describe('CatalogView', () => {
     await Promise.all([form.trigger('submit'), form.trigger('submit')])
 
     expect(api.updateProduct).toHaveBeenCalledTimes(1)
+  })
+
+  it('creates a SKU for a zero-SKU product and includes every field in the next atomic product save', async () => {
+    const zeroSkuProduct = {
+      id: 'spu-empty', name: '空白商品', categoryId: 'cat-1', brandId: 'brand-1',
+      imageUrl: null, description: null, enabled: true, skus: [],
+    }
+    const createdSku = {
+      id: 'sku-new', spuId: 'spu-empty', skuCode: 'NEW-42', barcode: '6900000000042',
+      specs: { 颜色: '蓝色', 尺码: '42' }, retailPrice: 199, warningStock: 4, enabled: true,
+    }
+    api.getProducts.mockResolvedValue({ items: [zeroSkuProduct], total: 1, page: 0, size: 100 })
+    api.quickCreateSku.mockResolvedValue(createdSku)
+    api.updateProduct.mockResolvedValue({ ...zeroSkuProduct, skus: [{ ...createdSku, enabled: false }] })
+    const wrapper = mount(CatalogView)
+    await flushPromises()
+    await wrapper.get('[data-testid="edit-product-spu-empty"]').trigger('click')
+    await wrapper.get('[data-testid="add-sku"]').trigger('click')
+    await wrapper.get('[data-testid="new-sku-code"]').setValue('NEW-42')
+    await wrapper.get('[data-testid="new-sku-barcode"]').setValue('6900000000042')
+    await wrapper.get('[data-testid="new-sku-specs"]').setValue('颜色:蓝色,尺码:42')
+    await wrapper.get('[data-testid="new-sku-retail-price"]').setValue('199')
+    await wrapper.get('[data-testid="new-sku-warning-stock"]').setValue('4')
+    await wrapper.get('[data-testid="new-sku-enabled"]').setValue(false)
+    await wrapper.get('[data-testid="create-sku"]').trigger('click')
+    await flushPromises()
+
+    expect(api.quickCreateSku).toHaveBeenCalledWith({
+      existingSpuId: 'spu-empty', categoryId: 'cat-1', brandId: 'brand-1', productName: '空白商品',
+      skuCode: 'NEW-42', barcode: '6900000000042', specs: { 颜色: '蓝色', 尺码: '42' },
+      retailPrice: 199, warningStock: 4,
+    })
+    await wrapper.get('[data-testid="save-product"]').trigger('click')
+    await flushPromises()
+    expect(api.updateProduct).toHaveBeenCalledWith('spu-empty', expect.objectContaining({
+      skus: [expect.objectContaining({
+        skuId: 'sku-new', skuCode: 'NEW-42', barcode: '6900000000042',
+        specs: { 颜色: '蓝色', 尺码: '42' }, retailPrice: 199, warningStock: 4, enabled: false,
+      })],
+    }))
   })
 })

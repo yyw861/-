@@ -3,7 +3,7 @@ import { nextTick, onMounted, reactive, ref } from 'vue'
 
 import {
   createBrand, createCategory, createProduct, errorMessage, getBrands, getCategories, getProducts,
-  updateBrand, updateCategory, updateProduct,
+  quickCreateSku, updateBrand, updateCategory, updateProduct,
 } from '../api'
 import type { Brand, Category, Product, Sku } from '../types'
 import { isJavaInteger, isNonNegativeInteger, isNonNegativeMoney } from '@/shared/validation/numbers'
@@ -28,6 +28,10 @@ const editingId = ref('')
 const editCloseButton = ref<HTMLButtonElement>()
 const editTrigger = ref<HTMLElement | null>(null)
 const editProduct = reactive({ productName: '', categoryId: '', brandId: '', imageUrl: '', description: '', enabled: true, skus: [] as EditableSku[] })
+const originalProduct = ref<Product | null>(null)
+const addingSku = ref(false)
+const creatingSku = ref(false)
+const newSku = reactive({ skuCode: '', barcode: '', specsText: '', retailPrice: '', warningStock: '0', enabled: true })
 
 onMounted(load)
 
@@ -122,6 +126,9 @@ async function addProduct() {
 
 async function beginEdit(product: Product, event?: MouseEvent) {
   editTrigger.value = event?.currentTarget as HTMLElement | null
+  originalProduct.value = product
+  addingSku.value = false
+  resetNewSku()
   editingId.value = product.id
   Object.assign(editProduct, {
     productName: product.name,
@@ -139,6 +146,58 @@ async function beginEdit(product: Product, event?: MouseEvent) {
   })
   await nextTick()
   editCloseButton.value?.focus()
+}
+
+function resetNewSku() {
+  Object.assign(newSku, { skuCode: '', barcode: '', specsText: '', retailPrice: '', warningStock: '0', enabled: true })
+}
+
+function startAddSku() {
+  alert.value = ''
+  resetNewSku()
+  addingSku.value = true
+}
+
+async function createNewSku() {
+  if (creatingSku.value || !editingId.value || !originalProduct.value) return
+  alert.value = ''
+  if (!newSku.skuCode.trim() || !newSku.barcode.trim()) {
+    alert.value = 'SKU 编码和条码为必填项'
+    return
+  }
+  if (!isNonNegativeMoney(newSku.retailPrice)) {
+    alert.value = '零售价最多保留 2 位小数，且不得小于 0'
+    return
+  }
+  if (!isNonNegativeInteger(newSku.warningStock)) {
+    alert.value = '库存预警值必须是非负整数'
+    return
+  }
+  creatingSku.value = true
+  try {
+    const product = originalProduct.value
+    const created = await quickCreateSku({
+      existingSpuId: product.id,
+      categoryId: product.categoryId,
+      brandId: product.brandId,
+      productName: product.name,
+      skuCode: newSku.skuCode.trim(),
+      barcode: newSku.barcode.trim(),
+      specs: parseSpecs(newSku.specsText),
+      retailPrice: Number(newSku.retailPrice),
+      warningStock: Number(newSku.warningStock),
+    })
+    editProduct.skus.push({
+      ...created,
+      specsText: formatSpecsForEdit(created.specs),
+      retailPrice: String(created.retailPrice),
+      warningStock: String(created.warningStock),
+      enabled: newSku.enabled,
+    })
+    addingSku.value = false
+    notice.value = 'SKU 已创建；请保存全部修改以应用启停等编辑。'
+  } catch (cause) { alert.value = errorMessage(cause) }
+  finally { creatingSku.value = false }
 }
 
 async function closeEdit() {
@@ -261,7 +320,7 @@ function parseSpecs(text: string) {
             <button :data-testid="`edit-product-${product.id}`" type="button" class="secondary" @click="beginEdit(product, $event)">编辑资料</button>
           </div>
           <table><thead><tr><th>SKU 编码</th><th>条码</th><th>规格</th><th>零售价</th><th>库存预警值</th><th>启用状态</th></tr></thead>
-            <tbody><tr v-for="sku in product.skus" :key="sku.id"><td>{{ sku.skuCode }}</td><td>{{ sku.barcode }}</td><td>{{ specsText(sku.specs) }}</td><td>¥{{ Number(sku.retailPrice).toFixed(2) }}</td><td>{{ sku.warningStock }}</td><td>{{ sku.enabled ? '启用' : '停用' }}</td></tr><tr v-if="!product.skus.length"><td colspan="6">尚无 SKU，可从扫码入库快速建档。</td></tr></tbody>
+            <tbody><tr v-for="sku in product.skus" :key="sku.id"><td>{{ sku.skuCode }}</td><td>{{ sku.barcode }}</td><td>{{ specsText(sku.specs) }}</td><td>¥{{ Number(sku.retailPrice).toFixed(2) }}</td><td>{{ sku.warningStock }}</td><td>{{ sku.enabled ? '启用' : '停用' }}</td></tr><tr v-if="!product.skus.length"><td colspan="6">尚无 SKU，可在“编辑资料”中新增。</td></tr></tbody>
           </table>
         </article>
       </div>
@@ -278,6 +337,18 @@ function parseSpecs(text: string) {
           <label class="wide">商品描述<textarea v-model="editProduct.description" data-testid="product-description" rows="2"></textarea></label>
           <label class="check"><input v-model="editProduct.enabled" type="checkbox">启用状态</label>
         </div>
+        <div class="section-heading sku-heading"><h3>SKU 规格</h3><button data-testid="add-sku" type="button" class="secondary" @click="startAddSku">新增 SKU</button></div>
+        <fieldset v-if="addingSku" class="new-sku">
+          <legend>新增 SKU</legend><div class="sku-grid">
+            <label>SKU 编码<input v-model="newSku.skuCode" data-testid="new-sku-code" required></label>
+            <label>条码<input v-model="newSku.barcode" data-testid="new-sku-barcode" required></label>
+            <label>规格（含颜色/尺码）<input v-model="newSku.specsText" data-testid="new-sku-specs" placeholder="颜色:蓝色,尺码:42"></label>
+            <label>零售价<input v-model="newSku.retailPrice" data-testid="new-sku-retail-price" type="number" min="0" step="0.01" required></label>
+            <label>库存预警值<input v-model="newSku.warningStock" data-testid="new-sku-warning-stock" type="number" min="0" step="1" required></label>
+            <label class="check"><input v-model="newSku.enabled" data-testid="new-sku-enabled" type="checkbox">启用状态</label>
+          </div>
+          <div class="sku-actions"><button type="button" class="secondary" @click="addingSku = false">取消新增</button><button data-testid="create-sku" type="button" :disabled="creatingSku" @click="createNewSku">{{ creatingSku ? '创建中…' : '创建 SKU' }}</button></div>
+        </fieldset>
         <fieldset v-for="sku in editProduct.skus" :key="sku.id">
           <legend>{{ sku.skuCode }}</legend><div class="sku-grid">
             <label>SKU 编码<input v-model="sku.skuCode" required></label><label>条码<input v-model="sku.barcode" required></label>
@@ -301,6 +372,6 @@ label { display: grid; gap: .3rem; color: #334155; font-size: .88rem; } input, s
 .product-form { display: grid; grid-template-columns: repeat(4, 1fr); align-items: end; gap: .8rem; }.wide { grid-column: span 3; }.section-heading { display: flex; align-items: center; justify-content: space-between; }
 .product { border: 1px solid #e2e8f0; border-radius: .6rem; overflow: hidden; margin-top: 1rem; }.product-summary { display: grid; grid-template-columns: 5rem 1fr auto; gap: 1rem; padding: 1rem; align-items: center; }.product-summary img, .image-placeholder { width: 5rem; height: 5rem; border-radius: .5rem; object-fit: cover; background: #f1f5f9; display: grid; place-items: center; color: #94a3b8; font-size: .75rem; }.tag { color: #475569; font-size: .82rem; }
 table { width: 100%; border-collapse: collapse; } th, td { padding: .65rem 1rem; text-align: left; border-top: 1px solid #e2e8f0; } th { color: #475569; font-size: .82rem; }.alert { color: #b91c1c; }.notice { color: #166534; }
-.overlay { position: fixed; inset: 0; z-index: 20; background: rgb(15 23 42 / .5); display: grid; place-items: center; padding: 1rem; }.dialog { width: min(70rem, 100%); max-height: 90vh; overflow: auto; border-radius: .8rem; padding: 1.2rem; background: white; }.close { font-size: 1.5rem; color: #334155; } fieldset { border: 1px solid #e2e8f0; margin: 1rem 0; border-radius: .5rem; }.sku-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .75rem; }.check { display: flex; flex-direction: row; align-items: center; }.dialog footer { display: flex; justify-content: flex-end; gap: .75rem; }
+.overlay { position: fixed; inset: 0; z-index: 20; background: rgb(15 23 42 / .5); display: grid; place-items: center; padding: 1rem; }.dialog { width: min(70rem, 100%); max-height: 90vh; overflow: auto; border-radius: .8rem; padding: 1.2rem; background: white; }.close { font-size: 1.5rem; color: #334155; } fieldset { border: 1px solid #e2e8f0; margin: 1rem 0; border-radius: .5rem; }.sku-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .75rem; }.check { display: flex; flex-direction: row; align-items: center; }.dialog footer, .sku-actions { display: flex; justify-content: flex-end; gap: .75rem; }.sku-heading { margin-top: 1.2rem; }.sku-heading h3 { margin-bottom: 0; }.new-sku { background: #f8fafc; }
 @media (max-width: 800px) { .dictionary-grid, .product-form, .sku-grid { grid-template-columns: 1fr; }.dictionary-row { grid-template-columns: 1fr 1fr; }.wide { grid-column: auto; }.product-summary { grid-template-columns: 1fr; } }
 </style>

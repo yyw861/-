@@ -20,9 +20,11 @@ const scanning = ref(false)
 const alert = ref('')
 const quickOpen = ref(false)
 const quickBarcode = ref('')
+const quickCategory = ref<Category | null>(null)
 const pending = ref<{ sku: Sku; productName: string } | null>(null)
 const quantity = ref('1')
 const unitCost = ref('')
+const pendingCostInput = ref<HTMLInputElement>()
 
 const selectedCategory = computed(() => categories.value.find((category) => category.id === selectedCategoryId.value) ?? null)
 const totals = computed(() => lines.value.reduce((total, line) => ({
@@ -44,6 +46,7 @@ onMounted(async () => {
 })
 
 async function chooseCategory(event: Event) {
+  if (quickOpen.value || pending.value || scanning.value) return
   store.selectCategory((event.target as HTMLSelectElement).value)
   pending.value = null
   await nextTick()
@@ -62,14 +65,15 @@ async function loadAllProducts(): Promise<Product[]> {
 }
 
 async function scan(barcode: string) {
-  if (!selectedCategory.value || scanning.value) return
+  if (!selectedCategory.value || scanning.value || pending.value || quickOpen.value || pendingConflict.value) return
+  const scannedCategory = { ...selectedCategory.value }
   alert.value = ''
   pending.value = null
   scanning.value = true
   try {
     const sku = await findSkuByBarcode(barcode)
     const product = await getProduct(sku.spuId)
-    if (product.categoryId !== selectedCategory.value.id) {
+    if (product.categoryId !== scannedCategory.id) {
       const actual = categories.value.find((category) => category.id === product.categoryId)?.name ?? '未知分类'
       alert.value = `该条码已属于其他分类，实际分类为“${actual}”，请切换分类后重试。`
       return
@@ -84,18 +88,22 @@ async function scan(barcode: string) {
   } catch (cause) {
     if (isNotFound(cause)) {
       quickBarcode.value = barcode
+      quickCategory.value = scannedCategory
       quickOpen.value = true
     } else {
       alert.value = errorMessage(cause)
     }
   } finally {
     scanning.value = false
-    if (!quickOpen.value && !pendingConflict.value) await scanner.value?.focus()
+    await nextTick()
+    if (pending.value) pendingQuantityInput.value?.focus()
+    else if (!quickOpen.value && !pendingConflict.value) await scanner.value?.focus()
   }
 }
 
 async function quickCreated(sku: Sku, productName: string) {
   quickOpen.value = false
+  quickCategory.value = null
   pending.value = { sku, productName }
   quantity.value = '1'
   unitCost.value = ''
@@ -106,6 +114,7 @@ async function quickCreated(sku: Sku, productName: string) {
 
 async function closeQuick() {
   quickOpen.value = false
+  quickCategory.value = null
   await nextTick()
   await scanner.value?.focus()
 }
@@ -114,7 +123,7 @@ async function refreshProducts() {
   try { products.value = await loadAllProducts() } catch { /* non-blocking refresh */ }
 }
 
-function addPendingLine() {
+async function addPendingLine() {
   alert.value = ''
   if (!pending.value || quantity.value === '' || unitCost.value === '') {
     alert.value = '数量和进价为必填项。'
@@ -126,11 +135,17 @@ function addPendingLine() {
       quantity: Number(quantity.value),
       unitCost: Number(unitCost.value),
     })
-    if (result.kind !== 'price-conflict') pending.value = null
+    if (result.kind !== 'price-conflict') {
+      pending.value = null
+      await nextTick()
+      await scanner.value?.focus()
+    }
   } catch (cause) {
     alert.value = errorMessage(cause)
   }
 }
+
+function focusUnitCost() { pendingCostInput.value?.focus() }
 
 async function resolveConflict(choice: 'update' | 'cancel') {
   try {
@@ -159,7 +174,7 @@ async function confirm() {
     <section class="card category-card" aria-labelledby="category-title">
       <div><h2 id="category-title">1. 选择商品分类</h2><p>切换分类不会清空已经录入的草稿。</p></div>
       <label>当前分类
-        <select data-testid="category-select" :value="selectedCategoryId" @change="chooseCategory">
+        <select data-testid="category-select" :value="selectedCategoryId" :disabled="quickOpen || Boolean(pending) || scanning || Boolean(pendingConflict)" @change="chooseCategory">
           <option value="">请选择分类</option>
           <option v-for="category in categories.filter((item) => item.enabled)" :key="category.id" :value="category.id">{{ category.name }}</option>
         </select>
@@ -168,13 +183,13 @@ async function confirm() {
 
     <section class="card" aria-labelledby="scan-title">
       <div class="section-heading"><div><h2 id="scan-title">2. 扫描条码</h2><p>{{ selectedCategory ? `已锁定：${selectedCategory.name}` : '请先完成分类选择' }}</p></div><span class="scan-status">扫码枪可直接回车</span></div>
-      <BarcodeInput ref="scanner" :disabled="!selectedCategoryId || quickOpen || Boolean(pendingConflict)" :busy="scanning" @submit="scan" />
+      <BarcodeInput ref="scanner" :disabled="!selectedCategoryId || quickOpen || Boolean(pending) || Boolean(pendingConflict)" :busy="scanning" @submit="scan" />
       <p v-if="alert" role="alert" class="alert">{{ alert }}</p>
 
       <form v-if="pending" data-testid="pending-sku" class="pending" @submit.prevent="addPendingLine">
         <div><strong>{{ pending.productName }}</strong><span>{{ pending.sku.skuCode }} · {{ pending.sku.barcode }}</span></div>
-        <label>数量<input ref="pendingQuantityInput" v-model="quantity" data-testid="pending-quantity" type="number" min="1" max="2147483647" step="1" required></label>
-        <label>进价<input v-model="unitCost" data-testid="pending-unit-cost" type="number" min="0" step="0.01" required></label>
+        <label>数量<input ref="pendingQuantityInput" v-model="quantity" data-testid="pending-quantity" type="number" min="1" max="2147483647" step="1" required @keydown.enter.prevent="focusUnitCost"></label>
+        <label>进价<input ref="pendingCostInput" v-model="unitCost" data-testid="pending-unit-cost" type="number" min="0" step="0.01" required></label>
         <button data-testid="add-line" type="submit">加入清单</button>
       </form>
     </section>
@@ -189,7 +204,7 @@ async function confirm() {
       </div>
     </section>
 
-    <QuickCreateSkuDialog :open="quickOpen" :barcode="quickBarcode" :category="selectedCategory" :brands="brands" :products="products" @close="closeQuick" @created="quickCreated" />
+    <QuickCreateSkuDialog :open="quickOpen" :barcode="quickBarcode" :category="quickCategory" :brands="brands" :products="products" @close="closeQuick" @created="quickCreated" />
 
     <div v-if="pendingConflict" class="overlay" role="dialog" aria-modal="true" aria-labelledby="cost-conflict-title">
       <section class="conflict" @keydown.esc="resolveConflict('cancel')">
