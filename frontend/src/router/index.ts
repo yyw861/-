@@ -24,6 +24,11 @@ const router = createRouter({
       name: 'inbound-history',
       component: () => import('@/modules/inbound/views/InboundHistoryView.vue'),
     },
+    {
+      path: '/inventory',
+      name: 'inventory',
+      component: () => import('@/modules/inventory/views/InventoryView.vue'),
+    },
   ],
 })
 

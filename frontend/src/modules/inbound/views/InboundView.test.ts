@@ -108,7 +108,9 @@ describe('InboundView', () => {
     expect(wrapper.get('[data-testid="barcode-input"]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('[data-testid="category-select"]').attributes('disabled')).toBeDefined()
     expect(wrapper.find('.el-dialog').exists()).toBe(true)
-    expect(document.activeElement).toBe(wrapper.get('[data-testid="quick-product-name"]').element)
+    await vi.waitFor(() => {
+      expect(document.activeElement).toBe(wrapper.get('[data-testid="quick-product-name"]').element)
+    })
 
     await wrapper.get('[data-testid="quick-close"]').trigger('click')
     await flushPromises()
