@@ -4,6 +4,7 @@ import { onMounted, ref } from 'vue'
 import { errorMessage } from '../../catalog/api'
 import { getInventory, getStockMovements } from '../api'
 import type { InventoryItem, StockMovement } from '../types'
+import { formatBusinessDateTime } from '@/shared/format/dateTime'
 
 const items = ref<InventoryItem[]>([])
 const movements = ref<StockMovement[]>([])
@@ -75,7 +76,7 @@ function signedQuantity(value: number) {
       <section class="dialog">
         <header class="section-heading"><div><h2 id="movement-title">库存流水</h2><p>{{ selected.productName }} · {{ selected.skuCode }}</p></div><button type="button" class="close" aria-label="关闭" @click="closeMovements">×</button></header>
         <div class="table-wrap"><table><thead><tr><th>发生时间</th><th>类型</th><th>来源单号</th><th>变动数量</th><th>变动前</th><th>变动后</th><th>单位成本</th></tr></thead>
-          <tbody><tr v-for="movement in movements" :key="movement.id"><td>{{ movement.occurredAt }}</td><td>{{ movement.movementType }}</td><td>{{ movement.documentNo }}</td><td>{{ signedQuantity(movement.quantityDelta) }}</td><td>{{ movement.quantityBefore }}</td><td>{{ movement.quantityAfter }}</td><td>{{ Number(movement.unitCost).toFixed(4) }}</td></tr></tbody>
+          <tbody><tr v-for="movement in movements" :key="movement.id"><td>{{ formatBusinessDateTime(movement.occurredAt) }}</td><td>{{ movement.movementType }}</td><td>{{ movement.documentNo }}</td><td>{{ signedQuantity(movement.quantityDelta) }}</td><td>{{ movement.quantityBefore }}</td><td>{{ movement.quantityAfter }}</td><td>{{ Number(movement.unitCost).toFixed(4) }}</td></tr></tbody>
         </table></div>
       </section>
     </div>

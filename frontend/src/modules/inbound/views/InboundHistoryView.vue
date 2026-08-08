@@ -4,6 +4,7 @@ import { nextTick, onMounted, reactive, ref } from 'vue'
 import { errorMessage } from '../../catalog/api'
 import { getInboundDetail, getInboundHistory } from '../api'
 import type { InboundReceipt, InboundSummary } from '../types'
+import { formatBusinessDateTime } from '@/shared/format/dateTime'
 
 const filters = reactive({ fromDate: '', toDate: '', orderNo: '' })
 const rows = ref<InboundSummary[]>([])
@@ -49,12 +50,6 @@ async function closeDetail() {
   await nextTick()
   detailTrigger.value?.focus()
 }
-
-function formatTime(value: string) {
-  return new Intl.DateTimeFormat('zh-CN', {
-    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
-  }).format(new Date(value))
-}
 </script>
 
 <template>
@@ -72,7 +67,7 @@ function formatTime(value: string) {
     <section class="card">
       <div class="section-heading"><h2>入库单据</h2><span>共 {{ total }} 张</span></div>
       <div class="table-wrap"><table><thead><tr><th>入库单号</th><th>入库时间</th><th>总数量</th><th>总金额</th><th>状态</th><th>操作</th></tr></thead>
-        <tbody><tr v-for="row in rows" :key="row.id"><td>{{ row.orderNo }}</td><td>{{ formatTime(row.occurredAt) }}</td><td>{{ row.totalQuantity }}</td><td>¥{{ Number(row.totalAmount).toFixed(2) }}</td><td>已确认</td><td><button :data-testid="`detail-${row.id}`" type="button" class="link" @click="openDetail(row.id, $event)">查看详情</button></td></tr><tr v-if="!loading && rows.length === 0"><td colspan="6" class="empty">暂无符合条件的入库单</td></tr></tbody>
+        <tbody><tr v-for="row in rows" :key="row.id"><td>{{ row.orderNo }}</td><td>{{ formatBusinessDateTime(row.occurredAt) }}</td><td>{{ row.totalQuantity }}</td><td>¥{{ Number(row.totalAmount).toFixed(2) }}</td><td>已确认</td><td><button :data-testid="`detail-${row.id}`" type="button" class="link" @click="openDetail(row.id, $event)">查看详情</button></td></tr><tr v-if="!loading && rows.length === 0"><td colspan="6" class="empty">暂无符合条件的入库单</td></tr></tbody>
       </table></div>
       <div class="pagination"><button type="button" class="secondary" :disabled="page === 0" @click="page--; search(false)">上一页</button><span>第 {{ page + 1 }} 页</span><button type="button" class="secondary" :disabled="(page + 1) * 20 >= total" @click="page++; search(false)">下一页</button></div>
     </section>
@@ -80,7 +75,7 @@ function formatTime(value: string) {
     <div v-if="detail" class="overlay" role="dialog" aria-modal="true" aria-labelledby="detail-title">
       <section data-testid="inbound-detail" class="dialog" @keydown.esc="closeDetail">
         <header class="section-heading"><div><p class="eyebrow">已确认入库单</p><h2 id="detail-title">{{ detail.orderNo }}</h2></div><button ref="detailCloseButton" data-testid="inbound-detail-close" type="button" class="close" aria-label="关闭" @click="closeDetail">×</button></header>
-        <dl><div><dt>入库时间</dt><dd>{{ formatTime(detail.occurredAt) }}</dd></div><div><dt>总数量</dt><dd>{{ detail.totalQuantity }}</dd></div><div><dt>总金额</dt><dd>¥{{ Number(detail.totalAmount).toFixed(2) }}</dd></div><div><dt>备注</dt><dd>{{ detail.remark || '—' }}</dd></div></dl>
+        <dl><div><dt>入库时间</dt><dd>{{ formatBusinessDateTime(detail.occurredAt) }}</dd></div><div><dt>总数量</dt><dd>{{ detail.totalQuantity }}</dd></div><div><dt>总金额</dt><dd>¥{{ Number(detail.totalAmount).toFixed(2) }}</dd></div><div><dt>备注</dt><dd>{{ detail.remark || '—' }}</dd></div></dl>
         <div class="table-wrap"><table><thead><tr><th>商品</th><th>SKU / 条码</th><th>数量</th><th>进价</th><th>小计</th></tr></thead><tbody><tr v-for="line in detail.lines" :key="line.id"><td>{{ line.productName }}</td><td>{{ line.skuCode }}<small>{{ line.barcode }}</small></td><td>{{ line.quantity }}</td><td>¥{{ Number(line.unitCost).toFixed(2) }}</td><td>¥{{ Number(line.subtotal).toFixed(2) }}</td></tr></tbody></table></div>
       </section>
     </div>

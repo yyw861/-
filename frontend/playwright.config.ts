@@ -10,8 +10,9 @@ const browserExecutable = process.env.SPORTSHOP_BROWSER_EXECUTABLE
 
 // Workers load this config too; only the coordinator may reset data before web servers start.
 // The E2E suite owns only this exact target directory. Development data under backend/data is untouched.
+// Bounded retries tolerate Windows briefly retaining SQLite WAL/SHM handles after the prior server exits.
 if (process.env.TEST_WORKER_INDEX === undefined) {
-  rmSync(e2eDataDir, { recursive: true, force: true })
+  rmSync(e2eDataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 })
 }
 
 export default defineConfig({
