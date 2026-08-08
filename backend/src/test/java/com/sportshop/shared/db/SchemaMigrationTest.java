@@ -2,9 +2,16 @@ package com.sportshop.shared.db;
 
 import com.sportshop.support.DatabaseTestSupport;
 import java.math.BigDecimal;
+import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.Statement;
 import java.util.List;
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
+import org.junit.jupiter.api.io.TempDir;
 import org.sqlite.SQLiteErrorCode;
 import org.sqlite.SQLiteException;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -105,7 +112,7 @@ class SchemaMigrationTest {
     }
 
     @Test
-    void rejectsMoneyWithExcessDecimalPlaces() {
+    void rejectsBusinessAmountsBeyondTheirAllowedScale() {
         insertCatalogFixture("money");
 
         assertConstraint(SQLiteErrorCode.SQLITE_CONSTRAINT_CHECK, () -> jdbcTemplate.update("""
@@ -129,8 +136,81 @@ class SchemaMigrationTest {
                     (id, movement_type, document_id, document_no, sku_id, quantity_delta, quantity_before,
                      quantity_after, unit_cost, occurred_at)
                 VALUES ('movement-money-invalid', 'INBOUND', 'order-money', 'IN-money', 'sku-money', 1, 0, 1,
-                        19.999, ?)
+                        19.12345, ?)
                 """, TIMESTAMP));
+    }
+
+    @Test
+    void upgradesStockMovementCostToFourDecimalsWithoutLosingRowsOrIndexes(@TempDir Path directory)
+            throws Exception {
+        String url = "jdbc:sqlite:" + directory.resolve("upgrade.db").toString().replace('\\', '/');
+        Flyway.configure().dataSource(url, null, null).target("1.1").load().migrate();
+        try (Connection connection = DriverManager.getConnection(url); Statement statement = connection.createStatement()) {
+            statement.executeUpdate("""
+                    INSERT INTO category (id, name, sort_order, enabled, created_at, updated_at)
+                    VALUES ('upgrade-category', 'upgrade category', 0, 1, '%s', '%s')
+                    """.formatted(TIMESTAMP, TIMESTAMP));
+            statement.executeUpdate("""
+                    INSERT INTO brand (id, name, remark, enabled, created_at, updated_at)
+                    VALUES ('upgrade-brand', 'upgrade brand', NULL, 1, '%s', '%s')
+                    """.formatted(TIMESTAMP, TIMESTAMP));
+            statement.executeUpdate("""
+                    INSERT INTO product_spu
+                        (id, name, category_id, brand_id, image_url, description, enabled, created_at, updated_at)
+                    VALUES ('upgrade-spu', 'upgrade product', 'upgrade-category', 'upgrade-brand', NULL, NULL, 1,
+                            '%s', '%s')
+                    """.formatted(TIMESTAMP, TIMESTAMP));
+            statement.executeUpdate("""
+                    INSERT INTO product_sku
+                        (id, spu_id, sku_code, barcode, retail_price, warning_stock, enabled, created_at, updated_at)
+                    VALUES ('upgrade-sku', 'upgrade-spu', 'UPGRADE-SKU', '6900000000998', 199.00, 0, 1,
+                            '%s', '%s')
+                    """.formatted(TIMESTAMP, TIMESTAMP));
+            statement.executeUpdate("""
+                    INSERT INTO stock_movement
+                        (id, movement_type, document_id, document_no, sku_id, quantity_delta, quantity_before,
+                         quantity_after, unit_cost, occurred_at)
+                    VALUES ('upgrade-movement', 'INBOUND', 'upgrade-order', 'IN-UPGRADE', 'upgrade-sku', 1, 0, 1,
+                            100.12, '%s')
+                    """.formatted(TIMESTAMP));
+        }
+
+        Flyway.configure().dataSource(url, null, null).load().migrate();
+
+        try (Connection connection = DriverManager.getConnection(url); Statement statement = connection.createStatement()) {
+            try (ResultSet row = statement.executeQuery(
+                    "SELECT unit_cost FROM stock_movement WHERE id = 'upgrade-movement'")) {
+                org.assertj.core.api.Assertions.assertThat(row.next()).isTrue();
+                org.assertj.core.api.Assertions.assertThat(row.getBigDecimal(1)).isEqualByComparingTo("100.12");
+            }
+            statement.executeUpdate("""
+                    INSERT INTO stock_movement
+                        (id, movement_type, document_id, document_no, sku_id, quantity_delta, quantity_before,
+                         quantity_after, unit_cost, occurred_at)
+                    VALUES ('four-decimal-movement', 'SALE', 'upgrade-sale', 'SO-UPGRADE', 'upgrade-sku', -1, 1, 0,
+                            100.1234, '%s')
+                    """.formatted(TIMESTAMP));
+            assertEquals(2, queryInt(statement, "SELECT COUNT(*) FROM stock_movement"));
+            assertEquals(1, queryInt(statement, """
+                    SELECT COUNT(*) FROM sqlite_master
+                     WHERE type = 'index' AND name = 'ix_stock_movement_sku_id_occurred_at'
+                    """));
+            assertEquals(1, queryInt(statement, """
+                    SELECT COUNT(*) FROM sqlite_master
+                     WHERE type = 'index' AND name = 'ux_stock_movement_source'
+                    """));
+            assertEquals(1, queryInt(statement, """
+                    SELECT COUNT(*) FROM pragma_foreign_key_list('stock_movement')
+                     WHERE "table" = 'product_sku' AND "from" = 'sku_id' AND "to" = 'id'
+                    """));
+            assertThrows(java.sql.SQLException.class, () -> statement.executeUpdate("""
+                    INSERT INTO stock_movement
+                        (id, movement_type, document_id, document_no, sku_id, quantity_delta, quantity_before,
+                         quantity_after, unit_cost, occurred_at)
+                    VALUES ('five-decimal-movement', 'SALE', 'upgrade-sale-2', 'SO-UPGRADE-2', 'upgrade-sku', -1, 1, 0,
+                            100.12345, '%s')
+                    """.formatted(TIMESTAMP)));
+        }
     }
 
     @Test
@@ -202,5 +282,12 @@ class SchemaMigrationTest {
         DataAccessException exception = assertThrows(DataAccessException.class, executable);
         SQLiteException sqliteException = assertInstanceOf(SQLiteException.class, exception.getMostSpecificCause());
         assertEquals(expectedCode, sqliteException.getResultCode());
+    }
+
+    private static int queryInt(Statement statement, String sql) throws Exception {
+        try (ResultSet result = statement.executeQuery(sql)) {
+            if (!result.next()) throw new AssertionError("Expected a scalar query result");
+            return result.getInt(1);
+        }
     }
 }

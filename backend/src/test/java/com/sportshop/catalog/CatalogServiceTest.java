@@ -109,6 +109,23 @@ class CatalogServiceTest {
     }
 
     @Test
+    void quickCreateRejectsDisabledExistingSpu() {
+        var category = catalogService.createCategory("disabled-spu-category");
+        var brand = catalogService.createBrand("disabled-spu-brand");
+        var product = catalogService.createProduct(new CreateProductCommand(
+                category.id(), brand.id(), "disabled product", null, null));
+        catalogService.updateProduct(new UpdateProductCommand(product.id(), product.name(), category.id(), brand.id(),
+                null, null, false, List.of()));
+
+        assertThatThrownBy(() -> catalogService.quickCreate(command(category.id(), brand.id(), product.id(),
+                product.name(), "DISABLED-SPU-SKU", "6900000000601", Map.of())))
+                .isInstanceOf(CatalogValidationException.class)
+                .hasMessageContaining("Disabled product");
+        assertThat(jdbcClient.sql("SELECT COUNT(*) FROM product_sku WHERE spu_id = :spuId")
+                .param("spuId", product.id().toString()).query(Integer.class).single()).isZero();
+    }
+
+    @Test
     void duplicateRenameIsConflictAndUnrepresentablePageIsInvalid() {
         var first = catalogService.createCategory("unique-first");
         var second = catalogService.createCategory("unique-second");

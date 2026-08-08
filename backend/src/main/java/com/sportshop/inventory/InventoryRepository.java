@@ -35,9 +35,10 @@ class InventoryRepository {
     Optional<Balance> findBalance(UUID skuId) {
         return jdbc.sql("""
                         SELECT balance.sku_id, balance.quantity, balance.average_cost, balance.version,
-                               balance.updated_at, sku.enabled
+                               balance.updated_at, sku.enabled AS sku_enabled, product.enabled AS product_enabled
                           FROM inventory_balance balance
                           JOIN product_sku sku ON sku.id = balance.sku_id
+                          JOIN product_spu product ON product.id = sku.spu_id
                          WHERE balance.sku_id = :skuId
                         """)
                 .param("skuId", skuId.toString()).query(this::mapBalance).optional();
@@ -52,7 +53,12 @@ class InventoryRepository {
                                updated_at = :updatedAt
                          WHERE sku_id = :skuId
                            AND version = :expectedVersion
-                           AND EXISTS (SELECT 1 FROM product_sku sku WHERE sku.id = :skuId AND sku.enabled = 1)
+                           AND EXISTS (
+                               SELECT 1
+                                 FROM product_sku sku
+                                 JOIN product_spu product ON product.id = sku.spu_id
+                                WHERE sku.id = :skuId AND sku.enabled = 1 AND product.enabled = 1
+                           )
                         """)
                 .param("quantityAfter", quantityAfter).param("averageCost", averageCost)
                 .param("updatedAt", updatedAt).param("skuId", skuId.toString())
@@ -68,7 +74,12 @@ class InventoryRepository {
                          WHERE sku_id = :skuId
                            AND quantity >= :quantity
                            AND version = :expectedVersion
-                           AND EXISTS (SELECT 1 FROM product_sku sku WHERE sku.id = :skuId AND sku.enabled = 1)
+                           AND EXISTS (
+                               SELECT 1
+                                 FROM product_sku sku
+                                 JOIN product_spu product ON product.id = sku.spu_id
+                                WHERE sku.id = :skuId AND sku.enabled = 1 AND product.enabled = 1
+                           )
                         """)
                 .param("quantity", quantity).param("updatedAt", updatedAt).param("skuId", skuId.toString())
                 .param("expectedVersion", expectedVersion).update();
@@ -156,7 +167,8 @@ class InventoryRepository {
 
     private Balance mapBalance(ResultSet rs, int rowNum) throws SQLException {
         return new Balance(uuid(rs, "sku_id"), rs.getInt("quantity"), rs.getBigDecimal("average_cost"),
-                rs.getLong("version"), rs.getString("updated_at"), rs.getInt("enabled") == 1);
+                rs.getLong("version"), rs.getString("updated_at"), rs.getInt("sku_enabled") == 1,
+                rs.getInt("product_enabled") == 1);
     }
 
     private StockMovementView mapMovement(ResultSet rs, int rowNum) throws SQLException {
@@ -181,7 +193,8 @@ class InventoryRepository {
         return UUID.fromString(rs.getString(column));
     }
 
-    record Balance(UUID skuId, int quantity, BigDecimal averageCost, long version, String updatedAt, boolean enabled) {
+    record Balance(UUID skuId, int quantity, BigDecimal averageCost, long version, String updatedAt,
+                   boolean skuEnabled, boolean productEnabled) {
     }
 
     private record Filter(String where, Map<String, Object> parameters) {

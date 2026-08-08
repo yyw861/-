@@ -39,7 +39,8 @@ public class InventoryService {
 
     @Transactional(propagation = Propagation.MANDATORY)
     public StockChangeResult receive(UUID skuId, int quantity, BigDecimal unitCost, MovementSource source) {
-        String occurredAt = validateChange(skuId, quantity, unitCost, source);
+        String occurredAt = validateChange(skuId, quantity, source);
+        validateUnitCost(unitCost);
         InventoryRepository.Balance balance = balance(skuId);
         requireEnabled(balance);
         int quantityAfter = addExact(balance.quantity(), quantity);
@@ -65,8 +66,8 @@ public class InventoryService {
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
-    public StockChangeResult issue(UUID skuId, int quantity, BigDecimal unitCost, MovementSource source) {
-        String occurredAt = validateChange(skuId, quantity, unitCost, source);
+    public StockChangeResult issue(UUID skuId, int quantity, MovementSource source) {
+        String occurredAt = validateChange(skuId, quantity, source);
         InventoryRepository.Balance balance = balance(skuId);
         requireEnabled(balance);
         final int updated;
@@ -87,7 +88,7 @@ public class InventoryService {
         int quantityAfter = balance.quantity() - quantity;
         repository.insertMovement(UUID.randomUUID(), source.type().trim(), source.documentId().trim(),
                 source.documentNo().trim(), skuId, -quantity, balance.quantity(), quantityAfter,
-                unitCost.setScale(2), occurredAt);
+                balance.averageCost().setScale(4), occurredAt);
         return new StockChangeResult(skuId, balance.quantity(), quantityAfter,
                 balance.averageCost().setScale(4), balance.version() + 1);
     }
@@ -109,12 +110,9 @@ public class InventoryService {
                 .orElseThrow(() -> new InventoryNotFoundException("Inventory balance not found"));
     }
 
-    private static String validateChange(UUID skuId, int quantity, BigDecimal unitCost, MovementSource source) {
+    private static String validateChange(UUID skuId, int quantity, MovementSource source) {
         if (skuId == null) throw new InventoryValidationException("SKU id is required");
         if (quantity <= 0) throw new InventoryValidationException("Quantity must be a positive integer");
-        if (unitCost == null || unitCost.signum() < 0 || unitCost.scale() > 2) {
-            throw new InventoryValidationException("Unit cost must be a non-negative amount with at most 2 decimals");
-        }
         if (source == null) throw new InventoryValidationException("Movement source is required");
         required(source.type(), "Movement type");
         required(source.documentId(), "Document id");
@@ -125,6 +123,12 @@ public class InventoryService {
         }
         catch (DateTimeParseException exception) {
             throw new InventoryValidationException("Occurred time must be an ISO-8601 timestamp with an offset");
+        }
+    }
+
+    private static void validateUnitCost(BigDecimal unitCost) {
+        if (unitCost == null || unitCost.signum() < 0 || unitCost.scale() > 2) {
+            throw new InventoryValidationException("Unit cost must be a non-negative amount with at most 2 decimals");
         }
     }
 
@@ -157,8 +161,11 @@ public class InventoryService {
     }
 
     private static void requireEnabled(InventoryRepository.Balance balance) {
-        if (!balance.enabled()) {
+        if (!balance.skuEnabled()) {
             throw new InventoryValidationException("Disabled SKU cannot change inventory");
+        }
+        if (!balance.productEnabled()) {
+            throw new InventoryValidationException("Disabled product cannot change inventory");
         }
     }
 

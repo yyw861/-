@@ -62,13 +62,16 @@ class InventoryServiceTest {
         SkuView sku = createSku("issue", "ISSUE-1", "6900000001002", 3);
         setBalance(sku.id(), 10, "100.1234", 0);
 
-        var result = inTransaction(() -> inventoryService.issue(sku.id(), 4, new BigDecimal("100.12"),
+        var result = inTransaction(() -> inventoryService.issue(sku.id(), 4,
                 source("SALE", "issue", "SO-001")));
 
         assertThat(result.quantityBefore()).isEqualTo(10);
         assertThat(result.quantityAfter()).isEqualTo(6);
         assertThat(result.averageCost()).isEqualByComparingTo("100.1234");
         assertThat(balanceCost(sku.id())).isEqualByComparingTo("100.1234");
+        assertThat(inventoryService.movements(sku.id())).singleElement()
+                .extracting(movement -> movement.unitCost())
+                .isEqualTo(new BigDecimal("100.1234"));
     }
 
     @Test
@@ -77,7 +80,7 @@ class InventoryServiceTest {
         setBalance(sku.id(), 2, "88.0000", 0);
 
         assertThatThrownBy(() -> inTransaction(() -> inventoryService.issue(sku.id(), 3,
-                new BigDecimal("88.00"), source("SALE", "insufficient", "SO-002"))))
+                source("SALE", "insufficient", "SO-002"))))
                 .isInstanceOf(InsufficientStockException.class)
                 .satisfies(error -> {
                     var insufficient = (InsufficientStockException) error;
@@ -97,7 +100,7 @@ class InventoryServiceTest {
         repository.injectExternalConflictAfterNextRead(sku.id());
 
         assertThatThrownBy(() -> inTransaction(() -> inventoryService.issue(sku.id(), 2,
-                new BigDecimal("72.00"), source("SALE", "conflict", "SO-003"))))
+                source("SALE", "conflict", "SO-003"))))
                 .isInstanceOf(InventoryVersionConflictException.class);
 
         assertThat(balanceQuantity(sku.id())).isEqualTo(8);
@@ -114,7 +117,25 @@ class InventoryServiceTest {
                 new BigDecimal("40.00"), source("INBOUND", "disabled-in", "IN-003"))))
                 .isInstanceOf(InventoryValidationException.class);
         assertThatThrownBy(() -> inTransaction(() -> inventoryService.issue(sku.id(), 1,
-                new BigDecimal("40.00"), source("SALE", "disabled-out", "SO-005"))))
+                source("SALE", "disabled-out", "SO-005"))))
+                .isInstanceOf(InventoryValidationException.class);
+
+        assertThat(balanceQuantity(sku.id())).isEqualTo(4);
+        assertThat(movementCount(sku.id())).isZero();
+    }
+
+    @Test
+    void enabledSkuUnderDisabledSpuCannotBeReceivedOrIssued() {
+        SkuView sku = createSku("disabled-spu", "DISABLED-SPU-1", "6900000001012", 3);
+        setBalance(sku.id(), 4, "40.1234", 0);
+        jdbc.sql("UPDATE product_spu SET enabled = 0 WHERE id = :id")
+                .param("id", sku.spuId().toString()).update();
+
+        assertThatThrownBy(() -> inTransaction(() -> inventoryService.receive(sku.id(), 1,
+                new BigDecimal("40.00"), source("INBOUND", "disabled-spu-in", "IN-008"))))
+                .isInstanceOf(InventoryValidationException.class);
+        assertThatThrownBy(() -> inTransaction(() -> inventoryService.issue(sku.id(), 1,
+                source("SALE", "disabled-spu-out", "SO-006"))))
                 .isInstanceOf(InventoryValidationException.class);
 
         assertThat(balanceQuantity(sku.id())).isEqualTo(4);
@@ -144,7 +165,7 @@ class InventoryServiceTest {
 
         inTransaction(() -> inventoryService.receive(sku.id(), 7, new BigDecimal("50.00"),
                 source("INBOUND", "ledger-in", "IN-002")));
-        inTransaction(() -> inventoryService.issue(sku.id(), 2, new BigDecimal("50.00"),
+        inTransaction(() -> inventoryService.issue(sku.id(), 2,
                 source("SALE", "ledger-out", "SO-004")));
 
         var movements = inventoryService.movements(sku.id());

@@ -106,6 +106,26 @@ class InboundControllerTest {
     }
 
     @Test
+    void disabledSpuReturnsBadRequestWithoutAnyInboundSideEffects() throws Exception {
+        SkuView sku = createSku("http-disabled-spu", "HTTP-IN-DISABLED-SPU", "6900000002110");
+        jdbc.sql("UPDATE product_spu SET enabled = 0 WHERE id = :id")
+                .param("id", sku.spuId().toString()).update();
+        String key = UUID.randomUUID().toString();
+
+        mvc.perform(post("/api/inbounds").header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON).content(body(sku.id(), 1, "10.00")))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.status").value(400));
+
+        assertThat(jdbc.sql("SELECT quantity FROM inventory_balance WHERE sku_id = :skuId")
+                .param("skuId", sku.id().toString()).query(Integer.class).single()).isZero();
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM inbound_order").query(Integer.class).single()).isZero();
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM inbound_line").query(Integer.class).single()).isZero();
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM stock_movement").query(Integer.class).single()).isZero();
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM idempotency_request WHERE request_id = :key")
+                .param("key", key).query(Integer.class).single()).isZero();
+    }
+
+    @Test
     void strictlyRequiresJsonIntegerQuantitiesAndNumericUnitCosts() {
         SkuView sku = createSku("http-strict-number", "HTTP-IN-STRICT", "6900000002104");
 

@@ -78,6 +78,9 @@ public class CatalogService {
         else {
             CatalogRepository.ProductRow product = repository.findProduct(spuId)
                     .orElseThrow(() -> new CatalogNotFoundException("Product not found"));
+            if (!product.enabled()) {
+                throw new CatalogValidationException("Disabled product cannot accept new SKUs");
+            }
             if (!product.categoryId().equals(command.categoryId())) {
                 throw new CatalogValidationException("Existing product category does not match");
             }

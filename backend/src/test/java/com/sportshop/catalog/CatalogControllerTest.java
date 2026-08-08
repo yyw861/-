@@ -17,6 +17,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import java.util.UUID;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -70,6 +71,25 @@ class CatalogControllerTest {
         mvc.perform(post("/api/catalog/skus/quick-create").contentType(MediaType.APPLICATION_JSON).content(payload))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.status").value(409));
         mvc.perform(post("/api/categories").contentType(MediaType.APPLICATION_JSON).content("{\"name\":\" \"}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.status").value(400));
+    }
+
+    @Test
+    void quickCreateReturnsBadRequestForDisabledExistingProduct() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        String categoryId = id(postJson("/api/categories", "{\"name\":\"disabled-category-" + suffix + "\"}"));
+        String brandId = id(postJson("/api/brands", "{\"name\":\"disabled-brand-" + suffix + "\"}"));
+        String productId = id(postJson("/api/catalog/products", """
+                {"categoryId":"%s","brandId":"%s","productName":"Disabled product"}
+                """.formatted(categoryId, brandId)));
+        mvc.perform(patch("/api/catalog/products/{id}", productId).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"enabled\":false}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(false));
+
+        mvc.perform(post("/api/catalog/skus/quick-create").contentType(MediaType.APPLICATION_JSON).content("""
+                {"categoryId":"%s","brandId":"%s","existingSpuId":"%s","productName":"Disabled product",
+                 "skuCode":"DISABLED-%s","barcode":"%s","specs":{},"retailPrice":99.00,"warningStock":1}
+                """.formatted(categoryId, brandId, productId, suffix, suffix)))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.status").value(400));
     }
 

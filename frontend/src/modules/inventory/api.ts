@@ -2,11 +2,23 @@ import { http } from '@/shared/api/http'
 
 import type { InventoryPage, StockMovement } from './types'
 
-export async function getInventory(query: { keyword?: string; page?: number; size?: number } = {}): Promise<InventoryPage> {
-  const keyword = query.keyword?.trim()
+export interface InventoryQuery {
+  name?: string
+  skuCode?: string
+  barcode?: string
+  page?: number
+  size?: number
+}
+
+export async function getInventory(query: InventoryQuery = {}): Promise<InventoryPage> {
+  const name = query.name?.trim()
+  const skuCode = query.skuCode?.trim()
+  const barcode = query.barcode?.trim()
   return (await http.get<InventoryPage>('/inventory', {
     params: {
-      ...(keyword ? { name: keyword } : {}),
+      ...(name ? { name } : {}),
+      ...(skuCode ? { skuCode } : {}),
+      ...(barcode ? { barcode } : {}),
       page: query.page ?? 0,
       size: query.size ?? 50,
     },

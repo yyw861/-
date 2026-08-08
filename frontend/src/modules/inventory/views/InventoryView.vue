@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import { errorMessage } from '../../catalog/api'
 import { getInventory, getStockMovements } from '../api'
+import type { InventoryQuery } from '../api'
 import type { InventoryItem, StockMovement } from '../types'
 import { formatBusinessDateTime } from '@/shared/format/dateTime'
 
@@ -10,8 +11,13 @@ const items = ref<InventoryItem[]>([])
 const movements = ref<StockMovement[]>([])
 const selected = ref<InventoryItem | null>(null)
 const keyword = ref('')
+const searchField = ref<'name' | 'skuCode' | 'barcode'>('name')
 const loading = ref(false)
 const alert = ref('')
+const page = ref(0)
+const total = ref(0)
+const pageSize = 50
+const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
 
 onMounted(load)
 
@@ -19,12 +25,28 @@ async function load() {
   loading.value = true
   alert.value = ''
   try {
-    items.value = (await getInventory({ keyword: keyword.value })).items
+    const value = keyword.value.trim()
+    const filter: InventoryQuery = value ? { [searchField.value]: value } : {}
+    const result = await getInventory({ ...filter, page: page.value, size: pageSize })
+    items.value = result.items
+    total.value = result.total
+    page.value = result.page
   } catch (cause) {
     alert.value = errorMessage(cause)
   } finally {
     loading.value = false
   }
+}
+
+async function search() {
+  page.value = 0
+  await load()
+}
+
+async function changePage(nextPage: number) {
+  if (nextPage < 0 || nextPage >= totalPages.value || nextPage === page.value) return
+  page.value = nextPage
+  await load()
 }
 
 async function showMovements(item: InventoryItem) {
@@ -55,7 +77,17 @@ function signedQuantity(value: number) {
     <section class="card" aria-labelledby="inventory-balance-title">
       <div class="section-heading">
         <div><h2 id="inventory-balance-title">当前库存余额</h2><p>查看 SKU 数量、移动平均成本和库存金额。</p></div>
-        <form class="search" role="search" @submit.prevent="load"><label>商品名称<input v-model="keyword" placeholder="输入商品名称"></label><button type="submit">查询</button></form>
+        <form class="search" role="search" @submit.prevent="search">
+          <label>搜索字段
+            <select v-model="searchField" data-testid="inventory-search-field">
+              <option value="name">商品名称</option>
+              <option value="skuCode">SKU 编码</option>
+              <option value="barcode">条码</option>
+            </select>
+          </label>
+          <label>搜索内容<input v-model="keyword" data-testid="inventory-search-value" placeholder="输入搜索内容"></label>
+          <button type="submit" data-testid="inventory-search-submit">查询</button>
+        </form>
       </div>
       <p v-if="loading">正在加载…</p>
       <div v-else class="table-wrap">
@@ -70,6 +102,13 @@ function signedQuantity(value: number) {
           </tbody>
         </table>
       </div>
+      <nav class="pagination" aria-label="库存分页">
+        <span>第 {{ page + 1 }} / {{ totalPages }} 页，共 {{ total }} 条</span>
+        <div>
+          <button type="button" :disabled="page === 0" @click="changePage(page - 1)">上一页</button>
+          <button type="button" data-testid="inventory-next-page" :disabled="page + 1 >= totalPages" @click="changePage(page + 1)">下一页</button>
+        </div>
+      </nav>
     </section>
 
     <div v-if="selected" class="overlay" role="dialog" aria-modal="true" aria-labelledby="movement-title" @keydown.esc="closeMovements">
@@ -86,8 +125,9 @@ function signedQuantity(value: number) {
 <style scoped>
 .page { max-width: 82rem; margin: 0 auto; display: grid; gap: 1rem; color: #0f172a; } h1, h2, p { margin-top: 0; }.eyebrow { color: #2563eb; font-size: .78rem; font-weight: 800; margin-bottom: .3rem; }
 .card, .dialog { background: white; border: 1px solid #e2e8f0; border-radius: .75rem; padding: 1.2rem; }.section-heading, .search { display: flex; align-items: end; justify-content: space-between; gap: .75rem; }.section-heading p { margin-bottom: 0; color: #64748b; }
-label { display: grid; gap: .3rem; color: #334155; font-size: .88rem; } input { font: inherit; border: 1px solid #cbd5e1; border-radius: .4rem; padding: .6rem; } button { font: inherit; border: 0; border-radius: .4rem; padding: .65rem .9rem; color: white; background: #2563eb; cursor: pointer; }.link, .close { background: none; color: #2563eb; padding: .2rem; }.close { color: #334155; font-size: 1.5rem; }
+label { display: grid; gap: .3rem; color: #334155; font-size: .88rem; } input, select { font: inherit; border: 1px solid #cbd5e1; border-radius: .4rem; padding: .6rem; background: white; } button { font: inherit; border: 0; border-radius: .4rem; padding: .65rem .9rem; color: white; background: #2563eb; cursor: pointer; } button:disabled { cursor: not-allowed; opacity: .45; }.link, .close { background: none; color: #2563eb; padding: .2rem; }.close { color: #334155; font-size: 1.5rem; }
 .table-wrap { overflow-x: auto; margin-top: 1rem; } table { width: 100%; border-collapse: collapse; } th, td { padding: .7rem; text-align: left; border-top: 1px solid #e2e8f0; white-space: nowrap; } th { color: #475569; font-size: .82rem; }.empty { color: #94a3b8; text-align: center; }.alert { color: #b91c1c; }
+.pagination { display: flex; justify-content: space-between; align-items: center; gap: .75rem; margin-top: 1rem; color: #475569; }.pagination div { display: flex; gap: .5rem; }
 .overlay { position: fixed; inset: 0; z-index: 20; background: rgb(15 23 42 / .5); display: grid; place-items: center; padding: 1rem; }.dialog { width: min(70rem, 100%); max-height: 90vh; overflow: auto; }
 @media (max-width: 750px) { .section-heading { align-items: stretch; flex-direction: column; }.search { align-items: stretch; flex-direction: column; } }
 </style>
