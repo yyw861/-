@@ -21,7 +21,7 @@
 ### Task 1: 销售与退货数据库结构
 
 **Files:**
-- Create: `backend/src/main/resources/db/migration/V2__sales_and_returns.sql`
+- Create: `backend/src/main/resources/db/migration/V3__sales_and_returns.sql`
 - Create: `backend/src/test/java/com/sportshop/sales/SalesSchemaMigrationTest.java`
 
 **Interfaces:**
@@ -29,7 +29,7 @@
 
 - [ ] **Step 1: 写迁移失败测试，断言 7 张表存在；`sale_order.order_no`、`return_order.order_no` 唯一；`return_line.original_sale_line_id` 必填；默认支付方式包含 CASH、WECHAT、ALIPAY、BANK_CARD。**
 - [ ] **Step 2: 运行 `cd backend && mvn test -Dtest=SalesSchemaMigrationTest`，确认失败。**
-- [ ] **Step 3: 编写 V2 SQL；销售明细保存 `list_unit_price`、`allocated_discount`、`actual_amount`、`cost_unit_snapshot`、`returned_quantity`；退货明细保存退款金额与原成本快照；所有外键启用级联限制而非级联删除。**
+- [ ] **Step 3: 编写 V3 SQL（第一阶段已使用 V2 调整库存流水成本精度）；销售明细保存 `list_unit_price`、`allocated_discount`、`actual_amount`、`cost_unit_snapshot`、`returned_quantity`；退货明细保存退款金额与原成本快照；所有外键启用限制而非级联删除。**
 - [ ] **Step 4: 运行迁移测试与全部后端测试。**
 - [ ] **Step 5: 提交 `git add backend && git commit -m "feat: add sales and returns schema"`。**
 
@@ -85,7 +85,7 @@
 
 - [ ] **Step 1: 写失败测试：部分退货更新累计已退数量；库存按原成本快照回补并重算平均成本；超额退货失败；引用其他销售单明细失败；最后一次退货结清该明细金额尾差；重复 requestId 不重复回补库存。**
 - [ ] **Step 2: 运行 `cd backend && mvn test -Dtest=ReturnServiceTest`，确认失败。**
-- [ ] **Step 3: 用 `@Transactional` 实现退货：锁定原销售明细；计算可退数量；非最后一次按 `actualAmount / soldQuantity` 取 2 位退款，最后一次使用 `actualAmount - previousRefunds`；生成 `RT-yyyyMMdd-000001`；调用 `InventoryService.receive` 并使用原成本快照。**
+- [ ] **Step 3: 用 `@Transactional` 实现退货：锁定原销售明细；计算可退数量；非最后一次按 `actualAmount / soldQuantity` 取 2 位退款，最后一次使用 `actualAmount - previousRefunds`；生成 `RT-yyyyMMdd-000001`；通过库存模块的退货专用回补入口使用原成本 4 位快照，普通入库的采购价校验仍保持 2 位。**
 - [ ] **Step 4: 写控制器测试验证 201、超退 409、错误原单 400、重复请求 200；实现控制器和查询。**
 - [ ] **Step 5: 运行退货测试及全部后端测试。**
 - [ ] **Step 6: 提交 `git add backend && git commit -m "feat: add original-sale returns"`。**
