@@ -60,6 +60,7 @@ class InboundControllerTest {
         jdbc.sql("DELETE FROM inbound_line").update();
         jdbc.sql("DELETE FROM inbound_order").update();
         jdbc.sql("DELETE FROM idempotency_request").update();
+        jdbc.sql("UPDATE document_sequence SET prefix = 'IN', next_value = 1 WHERE document_type = 'INBOUND'").update();
     }
 
     @Test
@@ -174,7 +175,7 @@ class InboundControllerTest {
         String detailOrderNo = json(secondOnDate, "$.orderNo");
         String firstOnDateId = json(firstOnDate, "$.id");
         assertThat(json(firstOnDate, "$.occurredAt")).isEqualTo("2026-08-04T16:30:00Z");
-        assertThat(json(firstOnDate, "$.orderNo")).isEqualTo("IN-20260805-000001");
+        assertThat(json(firstOnDate, "$.orderNo")).isEqualTo("IN-20260805-000002");
 
         mvc.perform(get("/api/inbounds").param("fromDate", "2026-08-05").param("toDate", "2026-08-05")
                         .param("page", "0").param("size", "1"))

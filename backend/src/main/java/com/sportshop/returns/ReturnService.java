@@ -9,6 +9,7 @@ import com.sportshop.returns.ReturnModels.ReturnReceipt;
 import com.sportshop.returns.ReturnModels.ReturnPage;
 import com.sportshop.returns.ReturnModels.ReturnQuery;
 import com.sportshop.shared.idempotency.IdempotencyService;
+import com.sportshop.shared.document.DocumentNumberService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
@@ -35,13 +36,15 @@ public class ReturnService {
     private final ReturnRepository repository;
     private final InventoryService inventoryService;
     private final IdempotencyService idempotencyService;
+    private final DocumentNumberService documentNumbers;
     private final Clock clock;
 
     ReturnService(ReturnRepository repository, InventoryService inventoryService,
-                  IdempotencyService idempotencyService, Clock clock) {
+                  IdempotencyService idempotencyService, DocumentNumberService documentNumbers, Clock clock) {
         this.repository = repository;
         this.inventoryService = inventoryService;
         this.idempotencyService = idempotencyService;
+        this.documentNumbers = documentNumbers;
         this.clock = clock;
     }
 
@@ -65,7 +68,7 @@ public class ReturnService {
         List<CalculatedLine> calculated = validated.lines().stream().map(input -> calculate(validated.saleId(), input)).toList();
         BigDecimal total = calculated.stream().map(CalculatedLine::refundAmount)
                 .reduce(new BigDecimal("0.00"), BigDecimal::add).setScale(2);
-        String orderNo = repository.nextOrderNumber(timestamp.atZone(SHOP_ZONE).toLocalDate());
+        String orderNo = documentNumbers.next(RESOURCE_TYPE, timestamp.atZone(SHOP_ZONE).toLocalDate());
         repository.insertOrder(claim.resourceId(), orderNo, sale.id(), occurredAt, total,
                 validated.refundMethod(), validated.reason());
         for (CalculatedLine item : calculated) {

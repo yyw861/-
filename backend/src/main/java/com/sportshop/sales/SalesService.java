@@ -13,6 +13,7 @@ import com.sportshop.sales.SalesModels.SaleReceipt;
 import com.sportshop.sales.SalesModels.SalePage;
 import com.sportshop.sales.SalesModels.SaleQuery;
 import com.sportshop.shared.idempotency.IdempotencyService;
+import com.sportshop.shared.document.DocumentNumberService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
@@ -43,15 +44,18 @@ public class SalesService {
     private final InventoryService inventoryService;
     private final IdempotencyService idempotencyService;
     private final PricingAllocator allocator;
+    private final DocumentNumberService documentNumbers;
     private final Clock clock;
 
     SalesService(SalesRepository repository, CatalogService catalogService, InventoryService inventoryService,
-                 IdempotencyService idempotencyService, PricingAllocator allocator, Clock clock) {
+                 IdempotencyService idempotencyService, PricingAllocator allocator,
+                 DocumentNumberService documentNumbers, Clock clock) {
         this.repository = repository;
         this.catalogService = catalogService;
         this.inventoryService = inventoryService;
         this.idempotencyService = idempotencyService;
         this.allocator = allocator;
+        this.documentNumbers = documentNumbers;
         this.clock = clock;
     }
 
@@ -83,7 +87,7 @@ public class SalesService {
         BigDecimal actual = original.subtract(validated.discount()).setScale(2);
         validatePayments(validated.payments(), actual);
 
-        String orderNo = repository.nextOrderNumber(timestamp.atZone(SHOP_ZONE).toLocalDate());
+        String orderNo = documentNumbers.next(RESOURCE_TYPE, timestamp.atZone(SHOP_ZONE).toLocalDate());
         repository.insertOrder(claim.resourceId(), orderNo, occurredAt, original, validated.discount(), actual,
                 validated.remark());
         for (PricedSku line : priced) {

@@ -48,7 +48,8 @@ public class SalesController {
         if (result.created()) {
             return ResponseEntity.created(URI.create("/api/sales/" + result.receipt().id())).body(result.receipt());
         }
-        return ResponseEntity.ok(result.receipt());
+        return ResponseEntity.ok().location(URI.create("/api/sales/" + result.receipt().id()))
+                .body(result.receipt());
     }
 
     @GetMapping

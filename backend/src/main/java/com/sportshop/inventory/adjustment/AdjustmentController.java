@@ -49,7 +49,8 @@ public class AdjustmentController {
             return ResponseEntity.created(URI.create("/api/inventory/adjustments/" + result.receipt().id()))
                     .body(result.receipt());
         }
-        return ResponseEntity.ok(result.receipt());
+        return ResponseEntity.ok().location(URI.create("/api/inventory/adjustments/" + result.receipt().id()))
+                .body(result.receipt());
     }
 
     @GetMapping

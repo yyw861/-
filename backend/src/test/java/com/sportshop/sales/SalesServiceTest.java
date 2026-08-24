@@ -7,6 +7,8 @@ import com.sportshop.sales.SalesModels.CheckoutCommand;
 import com.sportshop.sales.SalesModels.PaymentInput;
 import com.sportshop.sales.SalesModels.SaleLineInput;
 import com.sportshop.shared.idempotency.IdempotencyService.IdempotencyConflictException;
+import com.sportshop.settings.SettingsModels.DocumentNumberingUpdate;
+import com.sportshop.settings.SettingsService;
 import com.sportshop.support.DatabaseTestSupport;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -46,6 +48,7 @@ class SalesServiceTest {
 
     @Autowired SalesService salesService;
     @Autowired CatalogService catalogService;
+    @Autowired SettingsService settingsService;
     @Autowired JdbcClient jdbc;
 
     @BeforeEach
@@ -58,6 +61,7 @@ class SalesServiceTest {
         jdbc.sql("DELETE FROM sale_order").update();
         jdbc.sql("DELETE FROM stock_movement").update();
         jdbc.sql("DELETE FROM idempotency_request").update();
+        jdbc.sql("UPDATE document_sequence SET prefix = 'SO', next_value = 1 WHERE document_type = 'SALE'").update();
     }
 
     @Test
@@ -82,6 +86,20 @@ class SalesServiceTest {
         assertThat(jdbc.sql("SELECT unit_cost FROM stock_movement WHERE document_id = :id")
                 .param("id", receipt.id().toString()).query(BigDecimal.class).single())
                 .isEqualByComparingTo("100.1234");
+    }
+
+    @Test
+    void checkoutUsesConfiguredDocumentPrefixAndNextValue() {
+        settingsService.updateDocumentNumbering("SALE", new DocumentNumberingUpdate("XS", 20));
+        SkuView sku = createSku("configured-number", "40.00");
+        setBalance(sku.id(), 2, "25.0000");
+
+        var receipt = salesService.checkout(command(UUID.randomUUID().toString(), "0.00",
+                List.of(new SaleLineInput(sku.id(), 1)), "40.00"));
+
+        assertThat(receipt.orderNo()).isEqualTo("XS-20260813-000020");
+        assertThat(settingsService.documentNumberings()).filteredOn(item -> item.documentType().equals("SALE"))
+                .singleElement().extracting(item -> item.nextValue()).isEqualTo(21L);
     }
 
     @Test

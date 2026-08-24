@@ -24,19 +24,6 @@ class InboundRepository {
         this.jdbc = jdbc;
     }
 
-    String nextOrderNumber(LocalDate businessDate) {
-        String prefix = "IN-" + businessDate.toString().replace("-", "") + "-";
-        Optional<String> maximum = jdbc.sql("""
-                        SELECT MAX(order_no)
-                          FROM inbound_order
-                         WHERE order_no LIKE :prefix
-                        """)
-                .param("prefix", prefix + "%").query(String.class).optional();
-        int next = maximum.filter(value -> !value.isBlank())
-                .map(value -> Integer.parseInt(value.substring(prefix.length())) + 1).orElse(1);
-        return prefix + "%06d".formatted(next);
-    }
-
     void insertOrder(UUID id, String orderNo, String occurredAt, int totalQuantity, BigDecimal totalAmount,
                      String remark, String createdAt) {
         jdbc.sql("""

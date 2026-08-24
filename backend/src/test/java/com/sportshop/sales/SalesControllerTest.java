@@ -51,6 +51,8 @@ class SalesControllerTest {
         jdbc.sql("DELETE FROM sale_order").update();
         jdbc.sql("DELETE FROM stock_movement").update();
         jdbc.sql("DELETE FROM idempotency_request").update();
+        jdbc.sql("DELETE FROM operation_log").update();
+        jdbc.sql("UPDATE document_sequence SET prefix = 'SO', next_value = 1 WHERE document_type = 'SALE'").update();
     }
 
     @Test
@@ -73,6 +75,8 @@ class SalesControllerTest {
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(id));
         assertThat(quantity(sku.id())).isEqualTo(6);
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM operation_log WHERE operation_type = 'SALE' AND object_id = :id")
+                .param("id", id).query(Integer.class).single()).isEqualTo(2);
     }
 
     @Test

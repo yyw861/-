@@ -8,7 +8,6 @@ import com.sportshop.sales.SalesModels.SaleSummary;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -24,14 +23,6 @@ class SalesRepository {
 
     SalesRepository(JdbcClient jdbc) {
         this.jdbc = jdbc;
-    }
-
-    String nextOrderNumber(LocalDate businessDate) {
-        String prefix = "SO-" + businessDate.format(DateTimeFormatter.BASIC_ISO_DATE) + "-";
-        Integer next = jdbc.sql("SELECT COALESCE(MAX(CAST(SUBSTR(order_no, 13) AS INTEGER)), 0) + 1 " +
-                        "FROM sale_order WHERE order_no LIKE :prefix")
-                .param("prefix", prefix + "%").query(Integer.class).single();
-        return prefix + "%06d".formatted(next);
     }
 
     void insertOrder(UUID id, String orderNo, String occurredAt, BigDecimal originalAmount,

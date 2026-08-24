@@ -49,6 +49,8 @@ class ReturnServiceTest {
         jdbc.sql("DELETE FROM sale_order").update();
         jdbc.sql("DELETE FROM stock_movement").update();
         jdbc.sql("DELETE FROM idempotency_request").update();
+        jdbc.sql("UPDATE document_sequence SET prefix = 'SO', next_value = 1 WHERE document_type = 'SALE'").update();
+        jdbc.sql("UPDATE document_sequence SET prefix = 'RT', next_value = 1 WHERE document_type = 'RETURN'").update();
     }
 
     @Test

@@ -10,6 +10,7 @@ import com.sportshop.inbound.InboundModels.InboundReceipt;
 import com.sportshop.inventory.InventoryModels.MovementSource;
 import com.sportshop.inventory.InventoryService;
 import com.sportshop.shared.idempotency.IdempotencyService;
+import com.sportshop.shared.document.DocumentNumberService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
@@ -38,14 +39,16 @@ public class InboundService {
     private final InventoryService inventoryService;
     private final CatalogService catalogService;
     private final IdempotencyService idempotencyService;
+    private final DocumentNumberService documentNumbers;
     private final Clock clock;
 
     InboundService(InboundRepository repository, InventoryService inventoryService, CatalogService catalogService,
-                   IdempotencyService idempotencyService, Clock clock) {
+                   IdempotencyService idempotencyService, DocumentNumberService documentNumbers, Clock clock) {
         this.repository = repository;
         this.inventoryService = inventoryService;
         this.catalogService = catalogService;
         this.idempotencyService = idempotencyService;
+        this.documentNumbers = documentNumbers;
         this.clock = clock;
     }
 
@@ -68,7 +71,7 @@ public class InboundService {
         }
 
         validateCatalog(validated.lines());
-        String orderNo = repository.nextOrderNumber(businessDate);
+        String orderNo = documentNumbers.next(RESOURCE_TYPE, businessDate);
         repository.insertOrder(claim.resourceId(), orderNo, occurredAt, validated.totalQuantity(),
                 validated.totalAmount(), validated.remark(), occurredAt);
         for (ValidatedLine line : validated.lines()) {

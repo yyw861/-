@@ -56,6 +56,7 @@ class InboundServiceTest {
         jdbc.sql("DELETE FROM inbound_line").update();
         jdbc.sql("DELETE FROM inbound_order").update();
         jdbc.sql("DELETE FROM idempotency_request").update();
+        jdbc.sql("UPDATE document_sequence SET prefix = 'IN', next_value = 1 WHERE document_type = 'INBOUND'").update();
     }
 
     @Test

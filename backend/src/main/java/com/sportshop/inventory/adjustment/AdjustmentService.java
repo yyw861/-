@@ -10,6 +10,7 @@ import com.sportshop.inventory.adjustment.AdjustmentModels.AdjustmentQuery;
 import com.sportshop.inventory.adjustment.AdjustmentModels.AdjustmentReceipt;
 import com.sportshop.inventory.adjustment.AdjustmentModels.ConfirmationResult;
 import com.sportshop.shared.idempotency.IdempotencyService;
+import com.sportshop.shared.document.DocumentNumberService;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -36,13 +37,15 @@ public class AdjustmentService {
     private final AdjustmentRepository repository;
     private final InventoryService inventoryService;
     private final IdempotencyService idempotencyService;
+    private final DocumentNumberService documentNumbers;
     private final Clock clock;
 
     AdjustmentService(AdjustmentRepository repository, InventoryService inventoryService,
-                      IdempotencyService idempotencyService, Clock clock) {
+                      IdempotencyService idempotencyService, DocumentNumberService documentNumbers, Clock clock) {
         this.repository = repository;
         this.inventoryService = inventoryService;
         this.idempotencyService = idempotencyService;
+        this.documentNumbers = documentNumbers;
         this.clock = clock;
     }
 
@@ -65,7 +68,7 @@ public class AdjustmentService {
 
         List<CheckedLine> checked = checkCurrentStock(validated.lines());
         LocalDate businessDate = timestamp.atZone(SHOP_ZONE).toLocalDate();
-        String orderNo = repository.nextOrderNumber(businessDate);
+        String orderNo = documentNumbers.next(RESOURCE_TYPE, businessDate);
         repository.insertOrder(claim.resourceId(), orderNo, occurredAt, checked.size(), occurredAt);
         MovementSource source = new MovementSource(RESOURCE_TYPE, claim.resourceId().toString(), orderNo, occurredAt);
         for (CheckedLine line : checked) {
