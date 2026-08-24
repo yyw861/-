@@ -69,6 +69,15 @@ describe('CheckoutView', () => {
     expect(wrapper.get('[role="alert"]').text()).toContain('库存不足')
   })
 
+  it('updates checkout totals immediately while discount is typed', async () => {
+    const wrapper = mountView(); await scan(wrapper); await scan(wrapper)
+    const discount = wrapper.get('[data-testid="discount"]')
+    ;(discount.element as HTMLInputElement).value = '30'
+    await discount.trigger('input')
+    expect(useCartStore().actualAmount).toBe(270)
+    expect(wrapper.text()).toContain('¥270.00')
+  })
+
   it('requires exact payment and prevents duplicate submission', async () => {
     let resolve!: (value: unknown) => void
     salesApi.checkoutSale.mockReturnValue(new Promise((done) => { resolve = done }))

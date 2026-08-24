@@ -13,7 +13,7 @@ async function confirm(method:string,amount:number){if(submitting.value)return;t
 <template><main class="page"><header><div><p class="eyebrow">出货管理</p><h1>零售收银</h1><p>扫描条码即可加入购物车。</p></div><RouterLink to="/sales/history">销售记录</RouterLink></header>
   <section class="card"><h2>扫描商品</h2><BarcodeInput ref="scanner" :disabled="false" :busy="scanning" @submit="scan"/><p v-if="alert" role="alert" class="alert">{{ alert }}</p></section>
   <section class="card"><h2>购物车</h2><CheckoutCart :lines="lines" @quantity="quantity" @remove="store.remove"/>
-    <div class="summary"><label>优惠金额<input data-testid="discount" type="number" min="0" step="0.01" :value="discount" @change="updateDiscount"></label><label>备注<textarea v-model="remark" maxlength="500" @input="store.changed()"></textarea></label>
+    <div class="summary"><label>优惠金额<input data-testid="discount" type="number" min="0" step="0.01" :value="discount" @input="updateDiscount"></label><label>备注<textarea v-model="remark" maxlength="500" @input="store.changed()"></textarea></label>
       <dl><dt>商品原价</dt><dd>¥{{ store.originalAmount.toFixed(2) }}</dd><dt>优惠</dt><dd>-¥{{ discount.toFixed(2) }}</dd><dt>实收</dt><dd class="actual">¥{{ store.actualAmount.toFixed(2) }}</dd></dl>
       <button data-testid="open-payment" type="button" :disabled="!lines.length || submitting" @click="paymentOpen=true">去收款</button></div></section>
   <PaymentDialog :open="paymentOpen" :actual-amount="store.actualAmount" :submitting="submitting" @close="paymentOpen=false" @confirm="confirm"/>
