@@ -1,4 +1,3 @@
-import { h } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 
 const router = createRouter({
@@ -7,7 +6,7 @@ const router = createRouter({
     {
       path: '/',
       name: 'home',
-      component: () => h('main', '首页'),
+      component: () => import('@/modules/dashboard/views/DashboardView.vue'),
     },
     {
       path: '/catalog',
@@ -47,6 +46,11 @@ const router = createRouter({
     {
       path: '/returns',
       redirect: '/sales/history',
+    },
+    {
+      path: '/reports',
+      name: 'reports',
+      component: () => import('@/modules/reports/views/ReportsView.vue'),
     },
   ],
 })
