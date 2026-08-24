@@ -8,7 +8,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.stereotype.Component;
 
+@Component
 public final class PricingAllocator {
 
     private static final BigDecimal ZERO = new BigDecimal("0.00");
