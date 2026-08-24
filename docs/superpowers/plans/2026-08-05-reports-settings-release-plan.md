@@ -8,6 +8,8 @@
 
 **Tech Stack:** 延续前两阶段技术栈；增加 ECharts 用于图表，使用 SQLite `VACUUM INTO` 或 JDBC 备份 API 生成一致性快照。
 
+**Spec:** `docs/superpowers/specs/2026-08-05-sports-inventory-system-design.md`
+
 ## Global Constraints
 
 - 依赖前两个实施计划全部完成。
@@ -22,7 +24,7 @@
 ### Task 1: 系统设置、操作日志与库存调整结构
 
 **Files:**
-- Create: `backend/src/main/resources/db/migration/V3__settings_adjustments_audit.sql`
+- Create: `backend/src/main/resources/db/migration/V4__settings_adjustments_audit.sql`
 - Create: `backend/src/test/java/com/sportshop/settings/SettingsSchemaMigrationTest.java`
 
 **Interfaces:**
@@ -30,7 +32,7 @@
 
 - [ ] **Step 1: 写迁移失败测试，断言表存在、门店设置只有固定键 `default`、调整数量不得为零、备份记录状态限定为 STARTED/SUCCEEDED/FAILED。**
 - [ ] **Step 2: 运行 `cd backend && mvn test -Dtest=SettingsSchemaMigrationTest`，确认失败。**
-- [ ] **Step 3: 编写 V3 SQL，插入默认门店、默认小票设置和单号序列；为操作日志的发生时间与对象建立索引。**
+- [ ] **Step 3: 编写 V4 SQL（V3 已由销售退货模块使用），插入默认门店、默认小票设置和单号序列；为操作日志的发生时间与对象建立索引。**
 - [ ] **Step 4: 运行迁移测试及全部后端测试。**
 - [ ] **Step 5: 提交 `git add backend && git commit -m "feat: add settings and adjustment schema"`。**
 
@@ -42,7 +44,7 @@
 - Create: `backend/src/main/java/com/sportshop/inventory/adjustment/AdjustmentService.java`
 - Create: `backend/src/main/java/com/sportshop/inventory/adjustment/AdjustmentController.java`
 - Create: `backend/src/test/java/com/sportshop/inventory/adjustment/AdjustmentServiceTest.java`
-- Create: `frontend/src/modules/inventory/views/InventoryView.vue`
+- Modify: `frontend/src/modules/inventory/views/InventoryView.vue`
 - Create: `frontend/src/modules/inventory/components/AdjustmentDialog.vue`
 - Create: `frontend/src/modules/inventory/components/AdjustmentDialog.test.ts`
 - Create: `frontend/src/modules/inventory/exportInventoryCsv.ts`
