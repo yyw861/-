@@ -34,6 +34,20 @@ const router = createRouter({
       name: 'sales-checkout',
       component: () => import('@/modules/sales/views/CheckoutView.vue'),
     },
+    {
+      path: '/sales/history',
+      name: 'sales-history',
+      component: () => import('@/modules/sales/views/SalesHistoryView.vue'),
+    },
+    {
+      path: '/sales/:id',
+      name: 'sale-detail',
+      component: () => import('@/modules/sales/views/SaleDetailView.vue'),
+    },
+    {
+      path: '/returns',
+      redirect: '/sales/history',
+    },
   ],
 })
 
