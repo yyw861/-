@@ -39,8 +39,18 @@ public class InventoryService {
 
     @Transactional(propagation = Propagation.MANDATORY)
     public StockChangeResult receive(UUID skuId, int quantity, BigDecimal unitCost, MovementSource source) {
+        validateUnitCost(unitCost, 2);
+        return receiveAtCost(skuId, quantity, unitCost, source);
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public StockChangeResult receiveReturn(UUID skuId, int quantity, BigDecimal unitCost, MovementSource source) {
+        validateUnitCost(unitCost, 4);
+        return receiveAtCost(skuId, quantity, unitCost, source);
+    }
+
+    private StockChangeResult receiveAtCost(UUID skuId, int quantity, BigDecimal unitCost, MovementSource source) {
         String occurredAt = validateChange(skuId, quantity, source);
-        validateUnitCost(unitCost);
         InventoryRepository.Balance balance = balance(skuId);
         requireEnabled(balance);
         int quantityAfter = addExact(balance.quantity(), quantity);
@@ -61,7 +71,7 @@ public class InventoryService {
         }
         repository.insertMovement(UUID.randomUUID(), source.type().trim(), source.documentId().trim(),
                 source.documentNo().trim(), skuId, quantity, balance.quantity(), quantityAfter,
-                unitCost.setScale(2), occurredAt);
+                unitCost.setScale(4), occurredAt);
         return new StockChangeResult(skuId, balance.quantity(), quantityAfter, averageCost, balance.version() + 1);
     }
 
@@ -126,9 +136,10 @@ public class InventoryService {
         }
     }
 
-    private static void validateUnitCost(BigDecimal unitCost) {
-        if (unitCost == null || unitCost.signum() < 0 || unitCost.scale() > 2) {
-            throw new InventoryValidationException("Unit cost must be a non-negative amount with at most 2 decimals");
+    private static void validateUnitCost(BigDecimal unitCost, int maximumScale) {
+        if (unitCost == null || unitCost.signum() < 0 || unitCost.scale() > maximumScale) {
+            throw new InventoryValidationException("Unit cost must be a non-negative amount with at most "
+                    + maximumScale + " decimals");
         }
     }
 

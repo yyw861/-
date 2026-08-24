@@ -58,6 +58,23 @@ class InventoryServiceTest {
     }
 
     @Test
+    void returnReceiptUsesFourDecimalOriginalCostWithoutRelaxingPurchaseCostValidation() {
+        SkuView sku = createSku("return-cost", "RETURN-COST-1", "6900000001013", 3);
+        setBalance(sku.id(), 8, "80.0000", 0);
+
+        var result = inTransaction(() -> inventoryService.receiveReturn(sku.id(), 2,
+                new BigDecimal("100.1234"), source("RETURN", "return-cost", "RT-001")));
+
+        assertThat(result.quantityAfter()).isEqualTo(10);
+        assertThat(result.averageCost()).isEqualByComparingTo("84.0247");
+        assertThat(inventoryService.movements(sku.id())).singleElement()
+                .extracting(movement -> movement.unitCost()).isEqualTo(new BigDecimal("100.1234"));
+        assertThatThrownBy(() -> inTransaction(() -> inventoryService.receive(sku.id(), 1,
+                new BigDecimal("100.1234"), source("INBOUND", "purchase-cost", "IN-009"))))
+                .isInstanceOf(InventoryValidationException.class);
+    }
+
+    @Test
     void issueReducesQuantityWithoutChangingAverageCost() {
         SkuView sku = createSku("issue", "ISSUE-1", "6900000001002", 3);
         setBalance(sku.id(), 10, "100.1234", 0);
