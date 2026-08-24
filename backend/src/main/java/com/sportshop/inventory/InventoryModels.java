@@ -17,6 +17,9 @@ public final class InventoryModels {
                                     long version) {
     }
 
+    public record InventorySnapshot(UUID skuId, int quantity, BigDecimal averageCost, long version) {
+    }
+
     public record InventoryQuery(UUID categoryId, UUID brandId, String name, String skuCode, String barcode,
                                  boolean lowStock, int page, int size) {
     }

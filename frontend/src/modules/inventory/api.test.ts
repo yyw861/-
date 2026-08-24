@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { getInventory } from './api'
+import { createAdjustment, getInventory } from './api'
 
-const httpMock = vi.hoisted(() => ({ get: vi.fn() }))
+const httpMock = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }))
 vi.mock('@/shared/api/http', () => ({ http: httpMock }))
 
 describe('inventory API', () => {
   beforeEach(() => {
     httpMock.get.mockReset().mockResolvedValue({ data: { items: [], total: 0, page: 0, size: 50 } })
+    httpMock.post.mockReset().mockResolvedValue({ data: { id: 'adjustment-1', lines: [] } })
   })
 
   it.each([
@@ -18,5 +19,23 @@ describe('inventory API', () => {
     await getInventory(query)
 
     expect(httpMock.get).toHaveBeenCalledWith('/inventory', { params: expected })
+  })
+
+  it('sends low-stock filtering only when enabled', async () => {
+    await getInventory({ lowStock: true })
+
+    expect(httpMock.get).toHaveBeenCalledWith('/inventory', {
+      params: { lowStock: true, page: 0, size: 50 },
+    })
+  })
+
+  it('posts an adjustment with its idempotency key', async () => {
+    const command = { lines: [{ skuId: 'sku-1', systemQuantity: 10, countedQuantity: 8, reason: '破损' }] }
+
+    await createAdjustment(command, 'request-1')
+
+    expect(httpMock.post).toHaveBeenCalledWith('/inventory/adjustments', command, {
+      headers: { 'Idempotency-Key': 'request-1' },
+    })
   })
 })

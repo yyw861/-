@@ -2,7 +2,9 @@
 import { computed, onMounted, ref } from 'vue'
 
 import { errorMessage } from '../../catalog/api'
+import AdjustmentDialog from '../components/AdjustmentDialog.vue'
 import { getInventory, getStockMovements } from '../api'
+import { downloadInventoryCsv } from '../exportInventoryCsv'
 import type { InventoryQuery } from '../api'
 import type { InventoryItem, StockMovement } from '../types'
 import { formatBusinessDateTime } from '@/shared/format/dateTime'
@@ -10,27 +12,30 @@ import { formatBusinessDateTime } from '@/shared/format/dateTime'
 const items = ref<InventoryItem[]>([])
 const movements = ref<StockMovement[]>([])
 const selected = ref<InventoryItem | null>(null)
+const adjusting = ref<InventoryItem | null>(null)
 const keyword = ref('')
+const lowStockOnly = ref(false)
 const searchField = ref<'name' | 'skuCode' | 'barcode'>('name')
 const loading = ref(false)
+const exportLoading = ref(false)
 const alert = ref('')
 const page = ref(0)
 const total = ref(0)
+const appliedFilter = ref<InventoryQuery>({})
 const pageSize = 50
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
 
 onMounted(load)
 
-async function load() {
+async function load(filter: InventoryQuery = appliedFilter.value) {
   loading.value = true
   alert.value = ''
   try {
-    const value = keyword.value.trim()
-    const filter: InventoryQuery = value ? { [searchField.value]: value } : {}
     const result = await getInventory({ ...filter, page: page.value, size: pageSize })
     items.value = result.items
     total.value = result.total
     page.value = result.page
+    appliedFilter.value = { ...filter }
   } catch (cause) {
     alert.value = errorMessage(cause)
   } finally {
@@ -40,6 +45,46 @@ async function load() {
 
 async function search() {
   page.value = 0
+  await load(activeFilter())
+}
+
+function activeFilter(): InventoryQuery {
+  const value = keyword.value.trim()
+  return { ...(value ? { [searchField.value]: value } : {}),
+    ...(lowStockOnly.value ? { lowStock: true } : {}) }
+}
+
+async function exportCurrent() {
+  if (exportLoading.value) return
+  exportLoading.value = true
+  alert.value = ''
+  try {
+    const filter = { ...appliedFilter.value }
+    const exported: InventoryItem[] = []
+    let exportPage = 0
+    let expected = 0
+    do {
+      const result = await getInventory({ ...filter, page: exportPage, size: 100 })
+      exported.push(...result.items)
+      expected = result.total
+      exportPage += 1
+      if (result.items.length === 0) break
+    } while (exported.length < expected)
+    downloadInventoryCsv(exported)
+  } catch (cause) {
+    alert.value = errorMessage(cause)
+  } finally {
+    exportLoading.value = false
+  }
+}
+
+async function toggleLowStock() {
+  page.value = 0
+  await load(activeFilter())
+}
+
+async function adjustmentSucceeded() {
+  adjusting.value = null
   await load()
 }
 
@@ -86,7 +131,9 @@ function signedQuantity(value: number) {
             </select>
           </label>
           <label>搜索内容<input v-model="keyword" data-testid="inventory-search-value" placeholder="输入搜索内容"></label>
+          <label class="check"><input v-model="lowStockOnly" data-testid="low-stock-only" type="checkbox" @change="toggleLowStock">仅看低库存</label>
           <button type="submit" data-testid="inventory-search-submit">查询</button>
+          <button type="button" class="secondary" :disabled="total === 0 || exportLoading" @click="exportCurrent">{{ exportLoading ? '导出中…' : '导出筛选结果' }}</button>
         </form>
       </div>
       <p v-if="loading">正在加载…</p>
@@ -96,7 +143,7 @@ function signedQuantity(value: number) {
             <tr v-for="item in items" :key="item.skuId">
               <td>{{ item.productName }}</td><td>{{ item.skuCode }}</td><td>{{ item.barcode }}</td><td>{{ item.categoryName }} / {{ item.brandName }}</td>
               <td>{{ item.quantity }}</td><td>{{ Number(item.averageCost).toFixed(4) }}</td><td>¥{{ Number(item.inventoryValue).toFixed(2) }}</td>
-              <td><button type="button" class="link" @click="showMovements(item)">查看流水</button></td>
+              <td><div class="row-actions"><button type="button" class="link" @click="showMovements(item)">查看流水</button><button type="button" class="link" :data-testid="`open-adjustment-${item.skuId}`" @click="adjusting = item">库存调整</button></div></td>
             </tr>
             <tr v-if="items.length === 0"><td colspan="8" class="empty">暂无库存记录</td></tr>
           </tbody>
@@ -119,6 +166,7 @@ function signedQuantity(value: number) {
         </table></div>
       </section>
     </div>
+    <AdjustmentDialog v-if="adjusting" :open="true" :item="adjusting" @close="adjusting = null" @success="adjustmentSucceeded" />
   </main>
 </template>
 
@@ -126,6 +174,7 @@ function signedQuantity(value: number) {
 .page { max-width: 82rem; margin: 0 auto; display: grid; gap: 1rem; color: #0f172a; } h1, h2, p { margin-top: 0; }.eyebrow { color: #2563eb; font-size: .78rem; font-weight: 800; margin-bottom: .3rem; }
 .card, .dialog { background: white; border: 1px solid #e2e8f0; border-radius: .75rem; padding: 1.2rem; }.section-heading, .search { display: flex; align-items: end; justify-content: space-between; gap: .75rem; }.section-heading p { margin-bottom: 0; color: #64748b; }
 label { display: grid; gap: .3rem; color: #334155; font-size: .88rem; } input, select { font: inherit; border: 1px solid #cbd5e1; border-radius: .4rem; padding: .6rem; background: white; } button { font: inherit; border: 0; border-radius: .4rem; padding: .65rem .9rem; color: white; background: #2563eb; cursor: pointer; } button:disabled { cursor: not-allowed; opacity: .45; }.link, .close { background: none; color: #2563eb; padding: .2rem; }.close { color: #334155; font-size: 1.5rem; }
+.check { display: flex; align-items: center; white-space: nowrap; padding-bottom: .6rem; }.check input { width: 1rem; height: 1rem; }.secondary { background: #475569; white-space: nowrap; }.row-actions { display: flex; gap: .7rem; }
 .table-wrap { overflow-x: auto; margin-top: 1rem; } table { width: 100%; border-collapse: collapse; } th, td { padding: .7rem; text-align: left; border-top: 1px solid #e2e8f0; white-space: nowrap; } th { color: #475569; font-size: .82rem; }.empty { color: #94a3b8; text-align: center; }.alert { color: #b91c1c; }
 .pagination { display: flex; justify-content: space-between; align-items: center; gap: .75rem; margin-top: 1rem; color: #475569; }.pagination div { display: flex; gap: .5rem; }
 .overlay { position: fixed; inset: 0; z-index: 20; background: rgb(15 23 42 / .5); display: grid; place-items: center; padding: 1rem; }.dialog { width: min(70rem, 100%); max-height: 90vh; overflow: auto; }

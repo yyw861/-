@@ -2,6 +2,7 @@ package com.sportshop.inventory;
 
 import com.sportshop.inventory.InventoryModels.InventoryPage;
 import com.sportshop.inventory.InventoryModels.InventoryQuery;
+import com.sportshop.inventory.InventoryModels.InventorySnapshot;
 import com.sportshop.inventory.InventoryModels.MovementSource;
 import com.sportshop.inventory.InventoryModels.StockChangeResult;
 import com.sportshop.inventory.InventoryModels.StockMovementView;
@@ -113,6 +114,13 @@ public class InventoryService {
         if (skuId == null) throw new InventoryValidationException("SKU id is required");
         if (repository.findBalance(skuId).isEmpty()) throw new InventoryNotFoundException("Inventory balance not found");
         return repository.findMovements(skuId);
+    }
+
+    public InventorySnapshot snapshot(UUID skuId) {
+        if (skuId == null) throw new InventoryValidationException("SKU id is required");
+        InventoryRepository.Balance balance = balance(skuId);
+        return new InventorySnapshot(balance.skuId(), balance.quantity(), balance.averageCost().setScale(4),
+                balance.version());
     }
 
     private InventoryRepository.Balance balance(UUID skuId) {

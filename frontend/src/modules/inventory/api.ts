@@ -1,11 +1,12 @@
 import { http } from '@/shared/api/http'
 
-import type { InventoryPage, StockMovement } from './types'
+import type { AdjustmentLineInput, AdjustmentReceipt, InventoryPage, StockMovement } from './types'
 
 export interface InventoryQuery {
   name?: string
   skuCode?: string
   barcode?: string
+  lowStock?: boolean
   page?: number
   size?: number
 }
@@ -19,9 +20,16 @@ export async function getInventory(query: InventoryQuery = {}): Promise<Inventor
       ...(name ? { name } : {}),
       ...(skuCode ? { skuCode } : {}),
       ...(barcode ? { barcode } : {}),
+      ...(query.lowStock ? { lowStock: true } : {}),
       page: query.page ?? 0,
       size: query.size ?? 50,
     },
+  })).data
+}
+
+export async function createAdjustment(command: { lines: AdjustmentLineInput[] }, requestId: string) {
+  return (await http.post<AdjustmentReceipt>('/inventory/adjustments', command, {
+    headers: { 'Idempotency-Key': requestId },
   })).data
 }
 

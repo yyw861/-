@@ -37,3 +37,27 @@ export interface StockMovement {
   unitCost: number
   occurredAt: string
 }
+
+export interface AdjustmentLineInput {
+  skuId: string
+  systemQuantity: number
+  countedQuantity: number
+  reason: string
+}
+
+export interface AdjustmentReceipt {
+  id: string
+  orderNo: string
+  occurredAt: string
+  totalLines: number
+  status: string
+  createdAt: string
+  lines: Array<AdjustmentLineInput & {
+    id: string
+    skuCode: string
+    barcode: string
+    productName: string
+    differenceQuantity: number
+    unitCostSnapshot: number
+  }>
+}
