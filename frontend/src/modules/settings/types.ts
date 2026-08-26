@@ -49,3 +49,14 @@ export interface OperationLogItem {
 }
 
 export interface OperationLogPage { items: OperationLogItem[]; total: number; page: number; size: number }
+
+export interface BackupItem {
+  id: string; fileName: string; filePath: string; sha256: string | null; fileSize: number
+  backupType: 'MANUAL' | 'PRE_RESTORE'; status: 'STARTED' | 'SUCCEEDED' | 'FAILED'
+  createdAt: string; completedAt: string | null; errorMessage: string | null
+}
+export interface RestorePreview {
+  backupId: string; fileName: string; fileSize: number; sha256: string
+  schemaVersion: string; compatible: boolean; message: string
+}
+export interface RestoreResult { backupId: string; protectionBackupId: string; restoredAt: string; status: string }

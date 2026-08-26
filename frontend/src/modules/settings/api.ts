@@ -1,7 +1,7 @@
 import { http } from '@/shared/api/http'
 import type { DocumentNumbering, DocumentNumberingUpdate, OperationLogPage, PaymentMethod,
   PaymentMethodCreate, PaymentMethodPatch, ReceiptSetting, ReceiptSettingUpdate,
-  StoreSetting, StoreSettingUpdate } from './types'
+  StoreSetting, StoreSettingUpdate, BackupItem, RestorePreview, RestoreResult } from './types'
 
 export async function getStoreSetting() { return (await http.get<StoreSetting>('/settings/store')).data }
 export async function updateStoreSetting(value: StoreSettingUpdate) { return (await http.put<StoreSetting>('/settings/store', value)).data }
@@ -18,4 +18,10 @@ export async function patchPaymentMethod(code: string, value: PaymentMethodPatch
 }
 export async function getOperationLogs(operationType?: string, result?: string, page = 0, size = 20) {
   return (await http.get<OperationLogPage>('/operation-logs', { params: { operationType, result, page, size } })).data
+}
+export async function getBackups() { return (await http.get<BackupItem[]>('/backups')).data }
+export async function createBackup() { return (await http.post<BackupItem>('/backups')).data }
+export async function previewRestore(id: string) { return (await http.post<RestorePreview>(`/backups/${id}/restore-preview`)).data }
+export async function restoreBackup(id: string, confirmationText: string) {
+  return (await http.post<RestoreResult>(`/backups/${id}/restore`, { confirmationText })).data
 }

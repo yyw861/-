@@ -13,18 +13,32 @@ import com.sportshop.inventory.adjustment.AdjustmentModels.AdjustmentQuery;
 import com.sportshop.support.DatabaseTestSupport;
 import com.sportshop.shared.idempotency.IdempotencyService.IdempotencyConflictException;
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 @SpringBootTest
+@Import(AdjustmentServiceTest.FixedClockConfiguration.class)
 class AdjustmentServiceTest {
+
+    @TestConfiguration
+    static class FixedClockConfiguration {
+        @Bean @Primary
+        Clock fixedClock() { return Clock.fixed(Instant.parse("2026-08-24T04:00:00Z"), ZoneOffset.UTC); }
+    }
 
     @DynamicPropertySource
     static void databaseProperties(DynamicPropertyRegistry registry) {

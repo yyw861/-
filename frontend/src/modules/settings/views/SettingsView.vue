@@ -6,6 +6,7 @@ import { createPaymentMethod, getDocumentNumbering, getOperationLogs, getPayment
   getReceiptSetting, getStoreSetting, patchPaymentMethod, updateDocumentNumbering,
   updateReceiptSetting, updateStoreSetting } from '../api'
 import type { DocumentNumbering, OperationLogItem, PaymentMethod } from '../types'
+import BackupPanel from '../components/BackupPanel.vue'
 
 const storeForm = reactive({ storeName: '', phone: '', address: '', deviceName: '' })
 const receiptForm = reactive({ headerText: '', footerText: '', showPhone: true, showAddress: true, paperWidth: 58 as 58 | 80 })
@@ -70,7 +71,7 @@ function documentLabel(type: string) {
   return ({ INBOUND: '入库', SALE: '销售', RETURN: '退货', ADJUSTMENT: '盘点调整' } as Record<string, string>)[type] ?? type
 }
 function operationLabel(type: string) {
-  return ({ INBOUND: '入库', SALE: '销售', RETURN: '退货', ADJUSTMENT: '盘点调整', BACKUP: '备份' } as Record<string, string>)[type] ?? type
+  return ({ INBOUND: '入库', SALE: '销售', RETURN: '退货', ADJUSTMENT: '盘点调整', BACKUP: '备份', RESTORE_PREVIEW: '恢复预检', RESTORE: '数据恢复' } as Record<string, string>)[type] ?? type
 }
 </script>
 
@@ -84,6 +85,7 @@ function operationLabel(type: string) {
       <section class="card"><div class="section-heading"><div><h2>小票设置</h2><p>设置打印内容与纸张宽度。</p></div><button data-testid="save-receipt" @click="saveReceipt">保存小票设置</button></div><div class="form-grid"><label>抬头<input v-model="receiptForm.headerText"></label><label>页脚<input v-model="receiptForm.footerText"></label><label>纸宽<select data-testid="paper-width" v-model.number="receiptForm.paperWidth"><option :value="58">58 mm</option><option :value="80">80 mm</option></select></label><label class="checks"><span><input v-model="receiptForm.showPhone" type="checkbox"> 显示电话</span><span><input v-model="receiptForm.showAddress" type="checkbox"> 显示地址</span></label></div></section>
       <section class="card"><h2>单号规则</h2><div class="table-wrap"><table><thead><tr><th>单据</th><th>前缀</th><th>下一个序号</th><th></th></tr></thead><tbody><tr v-for="item in numberings" :key="item.documentType"><td>{{ documentLabel(item.documentType) }}</td><td><input :data-testid="`number-prefix-${item.documentType}`" v-model="item.prefix"></td><td><input v-model.number="item.nextValue" type="number" min="1"></td><td><button :data-testid="`save-number-${item.documentType}`" @click="saveNumbering(item)">保存</button></td></tr></tbody></table></div></section>
       <section class="card"><h2>支付方式</h2><div class="payment-add"><input data-testid="payment-code" v-model="paymentForm.code" placeholder="代码，如 UNIONPAY"><input data-testid="payment-name" v-model="paymentForm.name" placeholder="名称"><input v-model.number="paymentForm.sortOrder" type="number" aria-label="排序"><button data-testid="add-payment" :disabled="!paymentForm.code.trim() || !paymentForm.name.trim()" @click="addPayment">添加</button></div><div class="table-wrap"><table><thead><tr><th>代码</th><th>名称</th><th>排序</th><th>状态</th><th></th></tr></thead><tbody><tr v-for="item in payments" :key="item.code"><td>{{ item.code }}</td><td>{{ item.name }}</td><td>{{ item.sortOrder }}</td><td><span :class="item.enabled ? 'success' : 'muted'">{{ item.enabled ? '启用' : '停用' }}</span></td><td><button class="secondary" :data-testid="`toggle-payment-${item.code}`" @click="togglePayment(item)">{{ item.enabled ? '停用' : '启用' }}</button></td></tr></tbody></table></div></section>
+      <BackupPanel @restored="load" />
       <section class="card"><div class="section-heading"><div><h2>操作日志</h2><p>仅供查看，记录关键业务操作的结果与设备。</p></div></div><div class="table-wrap"><table><thead><tr><th>时间</th><th>操作</th><th>对象</th><th>结果</th><th>设备</th><th>说明</th></tr></thead><tbody><tr v-for="item in logs" :key="item.id"><td>{{ formatBusinessDateTime(item.occurredAt) }}</td><td>{{ operationLabel(item.operationType) }}</td><td>{{ item.objectId || item.objectType }}</td><td><span :class="item.result === 'SUCCESS' ? 'success' : 'failure'">{{ item.result === 'SUCCESS' ? '成功' : '失败' }}</span></td><td>{{ item.deviceSummary || '—' }}</td><td>{{ item.message || '—' }}</td></tr><tr v-if="!logs.length"><td colspan="6" class="empty">暂无操作日志</td></tr></tbody></table></div></section>
     </template>
   </main>

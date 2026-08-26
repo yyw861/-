@@ -9,6 +9,7 @@ const api = vi.hoisted(() => ({
   getDocumentNumbering: vi.fn(), updateDocumentNumbering: vi.fn(),
   getPaymentMethods: vi.fn(), createPaymentMethod: vi.fn(), patchPaymentMethod: vi.fn(),
   getOperationLogs: vi.fn(),
+  getBackups: vi.fn(), createBackup: vi.fn(), previewRestore: vi.fn(), restoreBackup: vi.fn(),
 }))
 vi.mock('../api', () => api)
 
@@ -27,6 +28,7 @@ describe('SettingsView', () => {
     api.createPaymentMethod.mockReset().mockResolvedValue({ code: 'UNIONPAY', name: '云闪付', enabled: true, sortOrder: 50 })
     api.patchPaymentMethod.mockReset().mockImplementation(async (_code, value) => ({ code: 'CASH', name: '现金', enabled: value.enabled, sortOrder: 10 }))
     api.getOperationLogs.mockReset().mockResolvedValue({ items: [{ id: 'log-1', operationType: 'SALE', objectType: 'SALE_ORDER', objectId: 'sale-1', occurredAt: '2026-08-24T01:00:00Z', result: 'SUCCESS', message: 'HTTP 201', deviceSummary: '默认收银台 · scanner/1.0' }], total: 1, page: 0, size: 20 })
+    api.getBackups.mockReset().mockResolvedValue([])
   })
 
   it('loads all settings and exposes a read-only operation log without login controls', async () => {
