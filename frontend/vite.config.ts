@@ -4,7 +4,12 @@ import vue from '@vitejs/plugin-vue'
 import { configDefaults, defineConfig } from 'vitest/config'
 
 export default defineConfig({
+  base: '/',
   plugins: [vue()],
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
