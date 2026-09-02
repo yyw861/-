@@ -4,7 +4,7 @@
 
 **Goal:** 将现有单层商品分类升级为大类、小类两级目录，并使扫码入库能够按条码前两位自动识别大类。
 
-**Architecture:** 保留 `category` 作为大类表并新增编号、确认状态，新增 `sub_category` 作为小类表，`product_spu` 只关联小类。目录服务集中负责分类链与条码前缀校验，入库、销售、库存和报表通过目录视图消费该规则；前端改为先扫码识别大类，再选择小类快速建档。
+**Architecture:** 重建 `category` 为带编号的大类表，新增 `sub_category` 作为小类表，`product_spu` 只关联小类。目录服务集中负责分类链与条码前缀校验，入库、销售、库存和报表通过目录视图消费该规则；前端改为先扫码识别大类，再选择小类快速建档。
 
 **Tech Stack:** Java 21、Spring Boot 3、JdbcClient、Flyway、SQLite、JUnit 5、Vue 3、TypeScript、Vite、Vitest、Playwright。
 
@@ -14,15 +14,14 @@
 
 - 大类编号和小类编号均为管理员手动输入的两位数字。
 - 大类编号全局唯一；小类编号和名称只在所属大类内唯一。
-- `00` 只用于迁移生成的“待分类”小类。
 - 条码只能包含数字、至少三位、全局唯一，前两位必须等于所属大类编号。
-- 大类未确认、分类链停用或商品仍在“待分类”小类时，禁止新增入库和销售。
-- 升级必须保留现有主键、库存和历史单据；迁移失败不得留下部分状态。
+- 分类链停用时禁止新增入库和销售。
+- 升级清空旧商品及业务数据，但保留门店、小票和单据编号等系统配置；迁移失败不得留下部分状态。
 - 本计划不增加供应商、多门店、账号权限或自动编号功能。
 
 ---
 
-### Task 1: 数据库升级与旧数据迁移
+### Task 1: 数据库升级与旧业务数据清理
 
 **Files:**
 - Create: `backend/src/main/resources/db/migration/V5__two_level_catalog.sql`
@@ -31,33 +30,40 @@
 
 **Interfaces:**
 - Consumes: Flyway 现有 V1-V4 表结构和 SQLite 原子迁移机制。
-- Produces: `category(code, code_confirmed)`、`sub_category`、`product_spu.sub_category_id` 以及条码格式约束。
+- Produces: `category(code)`、`sub_category`、`product_spu.sub_category_id` 以及条码格式约束。
 
-- [ ] **Step 1: 写迁移失败测试**
+- [x] **Step 1: 写迁移失败测试**
 
 ```java
 @Test
-void migratesExistingCategoryToPendingMajorAndMinorWithoutChangingProductId() {
+void clearsLegacyBusinessDataAndCreatesStrictTwoLevelCatalogSchema() {
     migrateToVersion("4");
-    UUID productId = insertLegacyCatalog();
+    insertLegacyBusinessData();
     migrate();
-    assertThat(jdbc.queryForObject("select code_confirmed from category", Integer.class)).isZero();
-    assertThat(jdbc.queryForObject("select code from sub_category", String.class)).isEqualTo("00");
-    assertThat(jdbc.queryForObject("select id from product_spu", String.class)).isEqualTo(productId.toString());
+    assertThat(jdbc.queryForObject("select count(*) from product_spu", Integer.class)).isZero();
+    assertThat(columns("product_spu")).contains("sub_category_id").doesNotContain("category_id");
+    assertThat(columns("category")).contains("code");
 }
 ```
 
-- [ ] **Step 2: 运行迁移测试并确认因 V5 不存在而失败**
+- [x] **Step 2: 运行迁移测试并确认因 V5 不存在而失败**
 
 Run: `mvn -q -Dtest=TwoLevelCatalogSchemaMigrationTest test`
 
 Expected: FAIL，缺少 `code_confirmed` 或 `sub_category`。
 
-- [ ] **Step 3: 实现 V5 原子表重建迁移**
+- [x] **Step 3: 实现 V5 原子表重建迁移**
 
 ```sql
-ALTER TABLE category ADD COLUMN code TEXT;
-ALTER TABLE category ADD COLUMN code_confirmed INTEGER NOT NULL DEFAULT 0 CHECK (code_confirmed IN (0, 1));
+CREATE TABLE category_new (
+  id TEXT PRIMARY KEY NOT NULL,
+  code TEXT NOT NULL UNIQUE CHECK(length(code) = 2 AND code NOT GLOB '*[^0-9]*'),
+  name TEXT NOT NULL UNIQUE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 CREATE TABLE sub_category (
   id TEXT PRIMARY KEY NOT NULL,
   category_id TEXT NOT NULL REFERENCES category(id),
@@ -72,15 +78,15 @@ CREATE UNIQUE INDEX ux_sub_category_parent_code ON sub_category(category_id, cod
 CREATE UNIQUE INDEX ux_sub_category_parent_name ON sub_category(category_id, name);
 ```
 
-迁移 SQL 还必须稳定分配 `01` 至 `99` 的待确认大类编号、为每个大类插入确定性 UUID 的 `00 待分类`，重建 `product_spu` 将旧 `category_id` 映射为 `sub_category_id`，并重建 `product_sku` 添加数字与最小长度检查。
+迁移 SQL 必须按外键依赖顺序清空旧进销退、库存、调整、目录和幂等数据，再重建 `category`、`sub_category`、`product_spu` 和 `product_sku`；门店、小票和单据编号设置不清空。新 `product_sku` 添加数字与最小长度检查。
 
-- [ ] **Step 4: 增加新安装与升级安装断言并运行测试**
+- [x] **Step 4: 增加新安装与升级安装断言并运行测试**
 
 Run: `mvn -q -Dtest=SchemaMigrationTest,TwoLevelCatalogSchemaMigrationTest test`
 
 Expected: PASS。
 
-- [ ] **Step 5: 提交迁移**
+- [x] **Step 5: 提交迁移**
 
 ```bash
 git add backend/src/main/resources/db/migration/V5__two_level_catalog.sql backend/src/test/java/com/sportshop/shared/db/SchemaMigrationTest.java backend/src/test/java/com/sportshop/catalog/TwoLevelCatalogSchemaMigrationTest.java
@@ -98,7 +104,7 @@ git commit -m "feat: migrate catalog to two levels"
 - Modify: `backend/src/test/java/com/sportshop/catalog/CatalogControllerTest.java`
 
 **Interfaces:**
-- Produces: `CategoryView(id, code, name, sortOrder, enabled, codeConfirmed)`、`SubCategoryView(id, categoryId, code, name, sortOrder, enabled)`、带分类上下文的 `SkuLookupView`。
+- Produces: `CategoryView(id, code, name, sortOrder, enabled)`、`SubCategoryView(id, categoryId, code, name, sortOrder, enabled)`、带分类上下文的 `SkuLookupView`。
 - Produces: `GET/POST/PATCH /api/categories`、`GET/POST/PATCH /api/categories/{categoryId}/subcategories`、`GET /api/catalog/categories/by-prefix/{prefix}`。
 - Produces: `CatalogService.requireSkuOperational(UUID)` 供入库和销售复用。
 
@@ -175,7 +181,7 @@ git commit -m "feat: add major and minor catalog APIs"
 - [ ] **Step 1: 写禁止待确认分类交易和报表分组失败测试**
 
 ```java
-@Test void rejectsInboundWhenMajorCodeIsPending() { /* 迁移占位商品提交入库返回冲突 */ }
+@Test void rejectsInboundWhenMajorCategoryIsDisabled() { /* 停用大类后提交入库返回冲突 */ }
 @Test void rejectsSaleWhenMinorCategoryIsDisabled() { /* 停用小类后扫码销售失败 */ }
 @Test void categoryShareAggregatesByMajorAndDrillsIntoMinor() { /* 两个小类汇总与下钻 */ }
 ```
@@ -245,7 +251,7 @@ Expected: FAIL，缺少前缀查询与小类选择控件。
 - [ ] **Step 3: 实现类型、API 和页面流程**
 
 ```ts
-export interface Category { id: string; code: string; name: string; sortOrder: number; enabled: boolean; codeConfirmed: boolean }
+export interface Category { id: string; code: string; name: string; sortOrder: number; enabled: boolean }
 export interface SubCategory { id: string; categoryId: string; code: string; name: string; sortOrder: number; enabled: boolean }
 export interface Product { id: string; name: string; subCategoryId: string; categoryId: string; brandId: string; /* ... */ }
 ```
