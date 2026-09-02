@@ -11,6 +11,7 @@ import com.sportshop.inbound.InboundModels.InboundLineInput;
 import com.sportshop.shared.idempotency.IdempotencyService;
 import com.sportshop.shared.idempotency.IdempotencyService.IdempotencyConflictException;
 import com.sportshop.support.DatabaseTestSupport;
+import com.sportshop.support.CatalogTestSupport;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -239,10 +240,10 @@ class InboundServiceTest {
     }
 
     private SkuView createSku(String productName, String skuCode, String barcode) {
-        var category = catalogService.createCategory("category-" + UUID.randomUUID());
+        var category = CatalogTestSupport.createCatalog(catalogService, "category-" + UUID.randomUUID());
         var brand = catalogService.createBrand("brand-" + UUID.randomUUID());
-        return catalogService.quickCreate(new QuickCreateSkuCommand(category.id(), brand.id(), null, productName,
-                skuCode, barcode, Map.of("size", "M"), new BigDecimal("99.00"), 3));
+        return catalogService.quickCreate(new QuickCreateSkuCommand(category.subCategory().id(), brand.id(), null, productName,
+                skuCode, CatalogTestSupport.barcode(category, barcode), Map.of("size", "M"), new BigDecimal("99.00"), 3));
     }
 
     private void setBalance(UUID skuId, int quantity, String averageCost) {

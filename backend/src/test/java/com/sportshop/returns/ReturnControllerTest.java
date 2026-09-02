@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.sportshop.catalog.CatalogModels.QuickCreateSkuCommand;
 import com.sportshop.catalog.CatalogModels.SkuView;
 import com.sportshop.catalog.CatalogService;
+import com.sportshop.support.CatalogTestSupport;
 import com.sportshop.sales.SalesModels.CheckoutCommand;
 import com.sportshop.sales.SalesModels.PaymentInput;
 import com.sportshop.sales.SalesModels.SaleLineInput;
@@ -103,10 +104,10 @@ class ReturnControllerTest {
     }
 
     private SaleReceipt sale(String suffix, int quantity) {
-        var category = catalogService.createCategory("web-return-category-" + UUID.randomUUID());
+        var category = CatalogTestSupport.createCatalog(catalogService, "web-return-category-" + UUID.randomUUID());
         var brand = catalogService.createBrand("web-return-brand-" + UUID.randomUUID());
-        SkuView sku = catalogService.quickCreate(new QuickCreateSkuCommand(category.id(), brand.id(), null, suffix,
-                "WEB-RETURN-" + UUID.randomUUID(), "67" + Math.abs(UUID.randomUUID().hashCode()), Map.of(),
+        SkuView sku = catalogService.quickCreate(new QuickCreateSkuCommand(category.subCategory().id(), brand.id(), null, suffix,
+                "WEB-RETURN-" + UUID.randomUUID(), CatalogTestSupport.barcode(category, "67" + Math.abs(UUID.randomUUID().hashCode())), Map.of(),
                 new BigDecimal("50.00"), 0));
         jdbc.sql("UPDATE inventory_balance SET quantity = :quantity, average_cost = 20 WHERE sku_id = :id")
                 .param("quantity", quantity).param("id", sku.id().toString()).update();

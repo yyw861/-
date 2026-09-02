@@ -7,6 +7,7 @@ import com.sportshop.catalog.CatalogModels.PageView;
 import com.sportshop.catalog.CatalogModels.ProductView;
 import com.sportshop.catalog.CatalogModels.QuickCreateSkuCommand;
 import com.sportshop.catalog.CatalogModels.SkuView;
+import com.sportshop.catalog.CatalogModels.SubCategoryView;
 import com.sportshop.catalog.CatalogModels.UpdateProductCommand;
 import com.sportshop.catalog.CatalogModels.UpdateSkuCommand;
 import java.math.BigDecimal;
@@ -45,17 +46,49 @@ public class CatalogController {
     List<CategoryView> categories() { return catalogService.categories(); }
 
     @PostMapping("/categories")
-    ResponseEntity<CategoryView> createCategory(@RequestBody NameRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(catalogService.createCategory(request.name()));
+    ResponseEntity<CategoryView> createCategory(@RequestBody CategoryRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(catalogService.createCategory(request.code(), request.name()));
     }
 
     @PatchMapping("/categories/{id}")
     CategoryView updateCategory(@PathVariable UUID id, @RequestBody CategoryPatchRequest request) {
         CategoryView current = catalogService.categories().stream().filter(value -> value.id().equals(id)).findFirst()
                 .orElseThrow(() -> new CatalogNotFoundException("Category not found"));
-        return catalogService.updateCategory(id, request.name() == null ? current.name() : request.name(),
+        return catalogService.updateCategory(id, request.code() == null ? current.code() : request.code(),
+                request.name() == null ? current.name() : request.name(),
                 request.sortOrder() == null ? current.sortOrder() : request.sortOrder(),
                 request.enabled() == null ? current.enabled() : request.enabled());
+    }
+
+    @GetMapping("/categories/{categoryId}/subcategories")
+    List<SubCategoryView> subCategories(@PathVariable UUID categoryId) {
+        return catalogService.subCategories(categoryId);
+    }
+
+    @PostMapping("/categories/{categoryId}/subcategories")
+    ResponseEntity<SubCategoryView> createSubCategory(@PathVariable UUID categoryId,
+                                                       @RequestBody SubCategoryRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(catalogService.createSubCategory(categoryId, request.code(), request.name()));
+    }
+
+    @PatchMapping("/categories/{categoryId}/subcategories/{id}")
+    SubCategoryView updateSubCategory(@PathVariable UUID categoryId, @PathVariable UUID id,
+                                      @RequestBody SubCategoryPatchRequest request) {
+        SubCategoryView current = catalogService.subCategories(categoryId).stream()
+                .filter(value -> value.id().equals(id)).findFirst()
+                .orElseThrow(() -> new CatalogNotFoundException("Subcategory not found"));
+        return catalogService.updateSubCategory(categoryId, id,
+                request.code() == null ? current.code() : request.code(),
+                request.name() == null ? current.name() : request.name(),
+                request.sortOrder() == null ? current.sortOrder() : request.sortOrder(),
+                request.enabled() == null ? current.enabled() : request.enabled());
+    }
+
+    @GetMapping("/catalog/categories/by-prefix/{prefix}")
+    CategoryView categoryByPrefix(@PathVariable String prefix) {
+        return catalogService.findCategoryByPrefix(prefix)
+                .orElseThrow(() -> new CatalogNotFoundException("Category prefix not found; create the category first"));
     }
 
     @GetMapping("/brands")
@@ -96,7 +129,7 @@ public class CatalogController {
         ProductView current = catalogService.findProduct(id).orElseThrow(() -> new CatalogNotFoundException("Product not found"));
         return catalogService.updateProduct(new UpdateProductCommand(id,
                 request.productName() == null ? current.name() : request.productName(),
-                request.categoryId() == null ? current.categoryId() : request.categoryId(),
+                request.subCategoryId() == null ? current.subCategoryId() : request.subCategoryId(),
                 request.brandId() == null ? current.brandId() : request.brandId(),
                 request.imageUrlPresent() ? request.imageUrl() : current.imageUrl(),
                 request.descriptionPresent() ? request.description() : current.description(),
@@ -137,7 +170,16 @@ public class CatalogController {
     public record NameRequest(String name) {
     }
 
-    public record CategoryPatchRequest(String name, Integer sortOrder, Boolean enabled) {
+    public record CategoryRequest(String code, String name) {
+    }
+
+    public record CategoryPatchRequest(String code, String name, Integer sortOrder, Boolean enabled) {
+    }
+
+    public record SubCategoryRequest(String code, String name) {
+    }
+
+    public record SubCategoryPatchRequest(String code, String name, Integer sortOrder, Boolean enabled) {
     }
 
     public static final class BrandPatchRequest {
@@ -156,7 +198,7 @@ public class CatalogController {
 
     public static final class ProductPatchRequest {
         private String productName;
-        private UUID categoryId;
+        private UUID subCategoryId;
         private UUID brandId;
         private String imageUrl;
         private String description;
@@ -165,7 +207,7 @@ public class CatalogController {
         private boolean imageUrlPresent;
         private boolean descriptionPresent;
         public String productName() { return productName; }
-        public UUID categoryId() { return categoryId; }
+        public UUID subCategoryId() { return subCategoryId; }
         public UUID brandId() { return brandId; }
         public String imageUrl() { return imageUrl; }
         public String description() { return description; }
@@ -174,7 +216,7 @@ public class CatalogController {
         public boolean imageUrlPresent() { return imageUrlPresent; }
         public boolean descriptionPresent() { return descriptionPresent; }
         public void setProductName(String value) { productName = value; }
-        public void setCategoryId(UUID value) { categoryId = value; }
+        public void setSubCategoryId(UUID value) { subCategoryId = value; }
         public void setBrandId(UUID value) { brandId = value; }
         @JsonSetter("imageUrl") public void setImageUrl(String value) { imageUrl = value; imageUrlPresent = true; }
         @JsonSetter("description") public void setDescription(String value) { description = value; descriptionPresent = true; }
@@ -214,6 +256,11 @@ class CatalogExceptionHandler {
 
     @ExceptionHandler(DuplicateCatalogFieldException.class)
     ResponseEntity<ProblemDetail> duplicate(DuplicateCatalogFieldException exception) {
+        return problem(HttpStatus.CONFLICT, exception.getMessage());
+    }
+
+    @ExceptionHandler(CatalogStateConflictException.class)
+    ResponseEntity<ProblemDetail> stateConflict(CatalogStateConflictException exception) {
         return problem(HttpStatus.CONFLICT, exception.getMessage());
     }
 

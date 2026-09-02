@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.sportshop.catalog.CatalogModels.QuickCreateSkuCommand;
 import com.sportshop.catalog.CatalogModels.SkuView;
 import com.sportshop.catalog.CatalogService;
+import com.sportshop.support.CatalogTestSupport;
 import com.sportshop.returns.ReturnModels.ReturnCommand;
 import com.sportshop.returns.ReturnModels.ReturnLineInput;
 import com.sportshop.sales.SalesModels.CheckoutCommand;
@@ -142,10 +143,10 @@ class ReturnServiceTest {
     }
 
     private SkuView stockedSku(String suffix, String price, int quantity, String cost) {
-        var category = catalogService.createCategory("return-category-" + UUID.randomUUID());
+        var category = CatalogTestSupport.createCatalog(catalogService, "return-category-" + UUID.randomUUID());
         var brand = catalogService.createBrand("return-brand-" + UUID.randomUUID());
-        SkuView sku = catalogService.quickCreate(new QuickCreateSkuCommand(category.id(), brand.id(), null,
-                "return-product-" + suffix, "RETURN-" + UUID.randomUUID(), "68" + Math.abs(UUID.randomUUID().hashCode()),
+        SkuView sku = catalogService.quickCreate(new QuickCreateSkuCommand(category.subCategory().id(), brand.id(), null,
+                "return-product-" + suffix, "RETURN-" + UUID.randomUUID(), CatalogTestSupport.barcode(category, "68" + Math.abs(UUID.randomUUID().hashCode())),
                 Map.of("size", "M"), new BigDecimal(price), 0));
         jdbc.sql("UPDATE inventory_balance SET quantity = :quantity, average_cost = :cost WHERE sku_id = :skuId")
                 .param("quantity", quantity).param("cost", new BigDecimal(cost)).param("skuId", sku.id().toString()).update();

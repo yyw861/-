@@ -3,6 +3,7 @@ package com.sportshop.sales;
 import com.sportshop.catalog.CatalogModels.QuickCreateSkuCommand;
 import com.sportshop.catalog.CatalogModels.SkuView;
 import com.sportshop.catalog.CatalogService;
+import com.sportshop.support.CatalogTestSupport;
 import com.sportshop.sales.SalesModels.CheckoutCommand;
 import com.sportshop.sales.SalesModels.PaymentInput;
 import com.sportshop.sales.SalesModels.SaleLineInput;
@@ -205,10 +206,10 @@ class SalesServiceTest {
     }
 
     private SkuView createSku(String suffix, String retailPrice) {
-        var category = catalogService.createCategory("sale-category-" + UUID.randomUUID());
+        var category = CatalogTestSupport.createCatalog(catalogService, "sale-category-" + UUID.randomUUID());
         var brand = catalogService.createBrand("sale-brand-" + UUID.randomUUID());
-        return catalogService.quickCreate(new QuickCreateSkuCommand(category.id(), brand.id(), null,
-                "product-" + suffix, "SALE-" + UUID.randomUUID(), "69" + Math.abs(UUID.randomUUID().hashCode()),
+        return catalogService.quickCreate(new QuickCreateSkuCommand(category.subCategory().id(), brand.id(), null,
+                "product-" + suffix, "SALE-" + UUID.randomUUID(), CatalogTestSupport.barcode(category, "69" + Math.abs(UUID.randomUUID().hashCode())),
                 Map.of("size", "M"), new BigDecimal(retailPrice), 0));
     }
 

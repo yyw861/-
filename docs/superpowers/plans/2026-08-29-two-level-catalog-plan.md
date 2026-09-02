@@ -108,7 +108,7 @@ git commit -m "feat: migrate catalog to two levels"
 - Produces: `GET/POST/PATCH /api/categories`、`GET/POST/PATCH /api/categories/{categoryId}/subcategories`、`GET /api/catalog/categories/by-prefix/{prefix}`。
 - Produces: `CatalogService.requireSkuOperational(UUID)` 供入库和销售复用。
 
-- [ ] **Step 1: 写编号、唯一性、锁定和前缀校验失败测试**
+- [x] **Step 1: 写编号、唯一性、锁定和前缀校验失败测试**
 
 ```java
 @Test void rejectsMajorCodeThatIsNotTwoDigits() { assertThatThrownBy(() -> service.createCategory("1", "球类")); }
@@ -117,13 +117,13 @@ git commit -m "feat: migrate catalog to two levels"
 @Test void rejectsBarcodeWhosePrefixDiffersFromMajor() { /* 02 分类下创建 01... 条码 */ }
 ```
 
-- [ ] **Step 2: 运行目录服务测试并确认新接口缺失导致失败**
+- [x] **Step 2: 运行目录服务测试并确认新接口缺失导致失败**
 
 Run: `mvn -q -Dtest=CatalogServiceTest test`
 
 Expected: FAIL，缺少新的命令、视图或服务方法。
 
-- [ ] **Step 3: 实现模型、仓储和服务最小闭环**
+- [x] **Step 3: 实现模型、仓储和服务最小闭环**
 
 ```java
 public record CategoryView(UUID id, String code, String name, int sortOrder,
@@ -138,7 +138,7 @@ public record QuickCreateSkuCommand(UUID subCategoryId, UUID brandId, UUID exist
 
 服务统一通过 `requireTwoDigitCode`、`requireNumericBarcode`、`requireActiveCatalog` 校验，商品读写只传 `subCategoryId`，仓储查询一次联结得到所属大类。
 
-- [ ] **Step 4: 写并验证 API 契约测试**
+- [x] **Step 4: 写并验证 API 契约测试**
 
 ```java
 mockMvc.perform(get("/api/catalog/categories/by-prefix/01"))
@@ -151,7 +151,7 @@ Run: `mvn -q -Dtest=CatalogServiceTest,CatalogControllerTest test`
 
 Expected: PASS。
 
-- [ ] **Step 5: 提交目录后端**
+- [x] **Step 5: 提交目录后端**
 
 ```bash
 git add backend/src/main/java/com/sportshop/catalog backend/src/test/java/com/sportshop/catalog

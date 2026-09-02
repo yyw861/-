@@ -9,6 +9,7 @@ import com.sportshop.catalog.CatalogService;
 import com.sportshop.inventory.InventoryModels.InventoryQuery;
 import com.sportshop.inventory.InventoryModels.MovementSource;
 import com.sportshop.support.DatabaseTestSupport;
+import com.sportshop.support.CatalogTestSupport;
 import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.util.Map;
@@ -251,10 +252,10 @@ class InventoryServiceTest {
     }
 
     private SkuView createSku(String productName, String skuCode, String barcode, int warningStock) {
-        var category = catalogService.createCategory("category-" + UUID.randomUUID());
+        var category = CatalogTestSupport.createCatalog(catalogService, "category-" + UUID.randomUUID());
         var brand = catalogService.createBrand("brand-" + UUID.randomUUID());
-        return catalogService.quickCreate(new QuickCreateSkuCommand(category.id(), brand.id(), null, productName,
-                skuCode, barcode, Map.of("size", "M"), new BigDecimal("99.00"), warningStock));
+        return catalogService.quickCreate(new QuickCreateSkuCommand(category.subCategory().id(), brand.id(), null, productName,
+                skuCode, CatalogTestSupport.barcode(category, barcode), Map.of("size", "M"), new BigDecimal("99.00"), warningStock));
     }
 
     private void setBalance(UUID skuId, int quantity, String averageCost, long version) {
