@@ -230,7 +230,7 @@ git commit -m "feat: enforce catalog chain in inventory flows"
 - Consumes: Task 2 大类、小类、前缀识别和快速建档 API。
 - Produces: 大类/小类联动管理，扫码后自动识别大类，未知 SKU 选择小类后快速建档。
 
-- [ ] **Step 1: 写前端失败测试**
+- [x] **Step 1: 写前端失败测试**
 
 ```ts
 it('scans before choosing a category and limits quick create to recognized major', async () => {
@@ -242,13 +242,13 @@ it('scans before choosing a category and limits quick create to recognized major
 })
 ```
 
-- [ ] **Step 2: 运行测试并确认旧的“先选分类”流程导致失败**
+- [x] **Step 2: 运行测试并确认旧的“先选分类”流程导致失败**
 
 Run: `npm test -- --run src/modules/catalog/views/CatalogView.test.ts src/modules/inbound/views/InboundView.test.ts`
 
 Expected: FAIL，缺少前缀查询与小类选择控件。
 
-- [ ] **Step 3: 实现类型、API 和页面流程**
+- [x] **Step 3: 实现类型、API 和页面流程**
 
 ```ts
 export interface Category { id: string; code: string; name: string; sortOrder: number; enabled: boolean }
@@ -258,13 +258,13 @@ export interface Product { id: string; name: string; subCategoryId: string; cate
 
 移除入库页预选分类卡片；输入条码后先校验数字和最小长度，再并行查完整 SKU 与前缀大类。已有 SKU 直接进入数量/进价；未知 SKU 将识别结果和所属可用小类传给快速建档弹窗；未知前缀显示“请先到商品管理建立对应大类”。
 
-- [ ] **Step 4: 运行目录和入库前端测试**
+- [x] **Step 4: 运行目录和入库前端测试**
 
 Run: `npm test -- --run src/modules/catalog/views/CatalogView.test.ts src/modules/inbound/views/InboundView.test.ts`
 
 Expected: PASS。
 
-- [ ] **Step 5: 提交核心前端**
+- [x] **Step 5: 提交核心前端**
 
 ```bash
 git add frontend/src/modules/catalog frontend/src/modules/inbound

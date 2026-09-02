@@ -2,16 +2,15 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 
-import { errorMessage, findSkuByBarcode, getBrands, getCategories, getProduct, getProducts, isNotFound } from '../../catalog/api'
-import type { Brand, Category, Product, Sku } from '../../catalog/types'
+import { errorMessage, findCategoryByPrefix, findSkuByBarcode, getBrands, getProduct, getProducts, getSubCategories, isNotFound } from '../../catalog/api'
+import type { Brand, Category, Product, Sku, SubCategory } from '../../catalog/types'
 import QuickCreateSkuDialog from '../../catalog/components/QuickCreateSkuDialog.vue'
 import BarcodeInput from '../components/BarcodeInput.vue'
 import InboundDraftTable from '../components/InboundDraftTable.vue'
 import { useInboundDraftStore } from '../stores/inboundDraft'
 
 const store = useInboundDraftStore()
-const { lines, remark, selectedCategoryId, submitting, lastReceipt, pendingConflict } = storeToRefs(store)
-const categories = ref<Category[]>([])
+const { lines, remark, submitting, lastReceipt, pendingConflict } = storeToRefs(store)
 const brands = ref<Brand[]>([])
 const products = ref<Product[]>([])
 const scanner = ref<InstanceType<typeof BarcodeInput>>()
@@ -21,12 +20,12 @@ const alert = ref('')
 const quickOpen = ref(false)
 const quickBarcode = ref('')
 const quickCategory = ref<Category | null>(null)
+const quickSubCategories = ref<SubCategory[]>([])
 const pending = ref<{ sku: Sku; productName: string } | null>(null)
 const quantity = ref('1')
 const unitCost = ref('')
 const pendingCostInput = ref<HTMLInputElement>()
 
-const selectedCategory = computed(() => categories.value.find((category) => category.id === selectedCategoryId.value) ?? null)
 const totals = computed(() => lines.value.reduce((total, line) => ({
   quantity: total.quantity + line.quantity,
   amount: total.amount + line.quantity * line.unitCost,
@@ -36,22 +35,13 @@ watch(remark, () => store.markChanged())
 
 onMounted(async () => {
   try {
-    const [categoryData, brandData, productItems] = await Promise.all([getCategories(), getBrands(), loadAllProducts()])
-    categories.value = categoryData
+    const [brandData, productItems] = await Promise.all([getBrands(), loadAllProducts()])
     brands.value = brandData
     products.value = productItems
   } catch (cause) {
     alert.value = errorMessage(cause)
   }
 })
-
-async function chooseCategory(event: Event) {
-  if (quickOpen.value || pending.value || scanning.value) return
-  store.selectCategory((event.target as HTMLSelectElement).value)
-  pending.value = null
-  await nextTick()
-  await scanner.value?.focus()
-}
 
 async function loadAllProducts(): Promise<Product[]> {
   const first = await getProducts(0, 100)
@@ -65,19 +55,43 @@ async function loadAllProducts(): Promise<Product[]> {
 }
 
 async function scan(barcode: string) {
-  if (!selectedCategory.value || scanning.value || pending.value || quickOpen.value || pendingConflict.value) return
-  const scannedCategory = { ...selectedCategory.value }
+  if (scanning.value || pending.value || quickOpen.value || pendingConflict.value) return
   alert.value = ''
   pending.value = null
+  if (!/^\d{3,}$/.test(barcode)) {
+    alert.value = '条码必须是至少 3 位数字。'
+    return
+  }
   scanning.value = true
   try {
-    const sku = await findSkuByBarcode(barcode)
-    const product = await getProduct(sku.spuId)
-    if (product.categoryId !== scannedCategory.id) {
-      const actual = categories.value.find((category) => category.id === product.categoryId)?.name ?? '未知分类'
-      alert.value = `该条码已属于其他分类，实际分类为“${actual}”，请切换分类后重试。`
+    const [skuResult, categoryResult] = await Promise.allSettled([
+      findSkuByBarcode(barcode), findCategoryByPrefix(barcode.slice(0, 2)),
+    ])
+    if (categoryResult.status === 'rejected') {
+      alert.value = isNotFound(categoryResult.reason)
+        ? `未找到编号为 ${barcode.slice(0, 2)} 的大类，请先到商品管理建立对应大类。`
+        : errorMessage(categoryResult.reason)
       return
     }
+    const scannedCategory = categoryResult.value
+    if (skuResult.status === 'rejected') {
+      if (!isNotFound(skuResult.reason)) {
+        alert.value = errorMessage(skuResult.reason)
+        return
+      }
+      const subCategories = await getSubCategories(scannedCategory.id)
+      if (!subCategories.some((item) => item.enabled)) {
+        alert.value = `大类“${scannedCategory.name}”下没有可用小类，请先建立小类。`
+        return
+      }
+      quickBarcode.value = barcode
+      quickCategory.value = scannedCategory
+      quickSubCategories.value = subCategories
+      quickOpen.value = true
+      return
+    }
+    const sku = skuResult.value
+    const product = await getProduct(sku.spuId)
     if (!sku.enabled || !product.enabled) {
       alert.value = '该商品或 SKU 已停用，不能入库。'
       return
@@ -85,15 +99,7 @@ async function scan(barcode: string) {
     pending.value = { sku, productName: product.name }
     quantity.value = '1'
     unitCost.value = ''
-  } catch (cause) {
-    if (isNotFound(cause)) {
-      quickBarcode.value = barcode
-      quickCategory.value = scannedCategory
-      quickOpen.value = true
-    } else {
-      alert.value = errorMessage(cause)
-    }
-  } finally {
+  } catch (cause) { alert.value = errorMessage(cause) } finally {
     scanning.value = false
     await nextTick()
     if (pending.value) pendingQuantityInput.value?.focus()
@@ -104,6 +110,7 @@ async function scan(barcode: string) {
 async function quickCreated(sku: Sku, productName: string) {
   quickOpen.value = false
   quickCategory.value = null
+  quickSubCategories.value = []
   pending.value = { sku, productName }
   quantity.value = '1'
   unitCost.value = ''
@@ -115,6 +122,7 @@ async function quickCreated(sku: Sku, productName: string) {
 async function closeQuick() {
   quickOpen.value = false
   quickCategory.value = null
+  quickSubCategories.value = []
   await nextTick()
   await scanner.value?.focus()
 }
@@ -167,23 +175,13 @@ async function confirm() {
 <template>
   <main class="page">
     <header class="page-header">
-      <div><p class="eyebrow">进货管理</p><h1>扫码入库</h1><p>先选择分类，再连续扫描商品条码。</p></div>
+      <div><p class="eyebrow">进货管理</p><h1>扫码入库</h1><p>扫描或手动输入条码，系统按前两位自动识别大类。</p></div>
       <RouterLink class="history-link" to="/inbounds/history">查看入库历史</RouterLink>
     </header>
 
-    <section class="card category-card" aria-labelledby="category-title">
-      <div><h2 id="category-title">1. 选择商品分类</h2><p>切换分类不会清空已经录入的草稿。</p></div>
-      <label>当前分类
-        <select data-testid="category-select" :value="selectedCategoryId" :disabled="quickOpen || Boolean(pending) || scanning || Boolean(pendingConflict)" @change="chooseCategory">
-          <option value="">请选择分类</option>
-          <option v-for="category in categories.filter((item) => item.enabled)" :key="category.id" :value="category.id">{{ category.name }}</option>
-        </select>
-      </label>
-    </section>
-
     <section class="card" aria-labelledby="scan-title">
-      <div class="section-heading"><div><h2 id="scan-title">2. 扫描条码</h2><p>{{ selectedCategory ? `已锁定：${selectedCategory.name}` : '请先完成分类选择' }}</p></div><span class="scan-status">扫码枪可直接回车</span></div>
-      <BarcodeInput ref="scanner" :disabled="!selectedCategoryId || quickOpen || Boolean(pending) || Boolean(pendingConflict)" :busy="scanning" @submit="scan" />
+      <div class="section-heading"><div><h2 id="scan-title">1. 扫描条码</h2><p>条码前两位对应大类编号</p></div><span class="scan-status">扫码枪可直接回车</span></div>
+      <BarcodeInput ref="scanner" :disabled="quickOpen || Boolean(pending) || Boolean(pendingConflict)" :busy="scanning" @submit="scan" />
       <p v-if="alert" role="alert" class="alert">{{ alert }}</p>
 
       <form v-if="pending" data-testid="pending-sku" class="pending" @submit.prevent="addPendingLine">
@@ -195,7 +193,7 @@ async function confirm() {
     </section>
 
     <section class="card" aria-labelledby="draft-title">
-      <div class="section-heading"><div><h2 id="draft-title">3. 核对入库清单</h2><p>共 {{ totals.quantity }} 件，金额 ¥{{ totals.amount.toFixed(2) }}</p></div></div>
+      <div class="section-heading"><div><h2 id="draft-title">2. 核对入库清单</h2><p>共 {{ totals.quantity }} 件，金额 ¥{{ totals.amount.toFixed(2) }}</p></div></div>
       <InboundDraftTable :lines="lines" @remove="store.removeLine" />
       <label class="remark">整单备注<textarea v-model="remark" data-testid="inbound-remark" rows="2" maxlength="500" placeholder="选填"></textarea></label>
       <div class="submit-row">
@@ -204,7 +202,7 @@ async function confirm() {
       </div>
     </section>
 
-    <QuickCreateSkuDialog :open="quickOpen" :barcode="quickBarcode" :category="quickCategory" :brands="brands" :products="products" @close="closeQuick" @created="quickCreated" />
+    <QuickCreateSkuDialog :open="quickOpen" :barcode="quickBarcode" :category="quickCategory" :sub-categories="quickSubCategories" :brands="brands" :products="products" @close="closeQuick" @created="quickCreated" />
 
     <div v-if="pendingConflict" class="overlay" role="dialog" aria-modal="true" aria-labelledby="cost-conflict-title">
       <section class="conflict" @keydown.esc="resolveConflict('cancel')">

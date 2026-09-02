@@ -4,8 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import CatalogView from './CatalogView.vue'
 
 const api = vi.hoisted(() => ({
-  getCategories: vi.fn(), getBrands: vi.fn(), getProducts: vi.fn(),
-  createCategory: vi.fn(), updateCategory: vi.fn(), createBrand: vi.fn(), updateBrand: vi.fn(),
+  getCategories: vi.fn(), getSubCategories: vi.fn(), getBrands: vi.fn(), getProducts: vi.fn(),
+  createCategory: vi.fn(), updateCategory: vi.fn(), createSubCategory: vi.fn(), updateSubCategory: vi.fn(), createBrand: vi.fn(), updateBrand: vi.fn(),
   createProduct: vi.fn(), quickCreateSku: vi.fn(), updateProduct: vi.fn(), updateSku: vi.fn(), setSkuEnabled: vi.fn(),
 }))
 
@@ -15,11 +15,12 @@ describe('CatalogView', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
     vi.clearAllMocks()
-    api.getCategories.mockResolvedValue([{ id: 'cat-1', name: '球类', sortOrder: 0, enabled: true }])
+    api.getCategories.mockResolvedValue([{ id: 'cat-1', code: '69', name: '球类', sortOrder: 0, enabled: true }])
+    api.getSubCategories.mockResolvedValue([{ id: 'sub-1', categoryId: 'cat-1', code: '01', name: '篮球', sortOrder: 0, enabled: true }])
     api.getBrands.mockResolvedValue([{ id: 'brand-1', name: '飞跃', remark: null, enabled: true }])
     api.getProducts.mockResolvedValue({
       items: [{
-        id: 'spu-1', name: '训练篮球', categoryId: 'cat-1', brandId: 'brand-1',
+        id: 'spu-1', name: '训练篮球', categoryId: 'cat-1', subCategoryId: 'sub-1', brandId: 'brand-1',
         imageUrl: 'https://example.com/ball.jpg', description: '室内外通用', enabled: true,
         skus: [{ id: 'sku-1', spuId: 'spu-1', skuCode: 'BALL-01', barcode: '6900000000012',
           specs: { 颜色: '红色', 尺码: '7号' }, retailPrice: 129, warningStock: 3, enabled: true }],
@@ -31,11 +32,29 @@ describe('CatalogView', () => {
     const wrapper = mount(CatalogView)
     await flushPromises()
 
-    for (const label of ['分类管理', '品牌管理', '图片 URL', '商品描述', '规格', '零售价', '库存预警值', '启用状态']) {
+    for (const label of ['大类管理', '小类管理', '品牌管理', '图片 URL', '商品描述', '规格', '零售价', '库存预警值', '启用状态']) {
       expect(wrapper.text()).toContain(label)
     }
     expect(wrapper.text()).toContain('训练篮球')
     expect(wrapper.text()).toContain('颜色：红色')
+  })
+
+  it('edits independently numbered major and minor categories', async () => {
+    api.updateCategory.mockResolvedValue({ id: 'cat-1', code: '69', name: '球类器材', sortOrder: 0, enabled: true })
+    api.updateSubCategory.mockResolvedValue({ id: 'sub-1', categoryId: 'cat-1', code: '01', name: '篮球器材', sortOrder: 0, enabled: true })
+    const wrapper = mount(CatalogView)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="category-name-cat-1"]').setValue('球类器材')
+    await wrapper.get('[data-testid="save-category-cat-1"]').trigger('click')
+    await wrapper.get('[data-testid="subcategory-name-sub-1"]').setValue('篮球器材')
+    await wrapper.get('[data-testid="save-subcategory-sub-1"]').trigger('click')
+    await flushPromises()
+
+    expect(api.updateCategory).toHaveBeenCalledWith('cat-1', { code: '69', name: '球类器材', sortOrder: 0, enabled: true })
+    expect(api.updateSubCategory).toHaveBeenCalledWith('cat-1', 'sub-1', {
+      code: '01', name: '篮球器材', sortOrder: 0, enabled: true,
+    })
   })
 
   it('edits a product and all SKU fields in one atomic product request', async () => {
@@ -61,7 +80,7 @@ describe('CatalogView', () => {
   })
 
   it('edits category ordering and brand remarks in addition to their names and status', async () => {
-    api.updateCategory.mockResolvedValue({ id: 'cat-1', name: '专业球类', sortOrder: 10, enabled: true })
+    api.updateCategory.mockResolvedValue({ id: 'cat-1', code: '69', name: '专业球类', sortOrder: 10, enabled: true })
     api.updateBrand.mockResolvedValue({ id: 'brand-1', name: '飞跃体育', remark: '国产品牌', enabled: true })
     const wrapper = mount(CatalogView)
     await flushPromises()
@@ -74,13 +93,13 @@ describe('CatalogView', () => {
     await wrapper.get('[data-testid="save-brand-brand-1"]').trigger('click')
     await flushPromises()
 
-    expect(api.updateCategory).toHaveBeenCalledWith('cat-1', { name: '专业球类', sortOrder: 10, enabled: true })
+    expect(api.updateCategory).toHaveBeenCalledWith('cat-1', { code: '69', name: '专业球类', sortOrder: 10, enabled: true })
     expect(api.updateBrand).toHaveBeenCalledWith('brand-1', { name: '飞跃体育', remark: '国产品牌', enabled: true })
   })
 
   it('loads every catalog page instead of silently stopping at 100 products', async () => {
     const product = (index: number) => ({
-      id: `spu-${index}`, name: `商品${index}`, categoryId: 'cat-1', brandId: 'brand-1',
+      id: `spu-${index}`, name: `商品${index}`, categoryId: 'cat-1', subCategoryId: 'sub-1', brandId: 'brand-1',
       imageUrl: null, description: null, enabled: true, skus: [],
     })
     api.getProducts
@@ -151,7 +170,7 @@ describe('CatalogView', () => {
 
   it('creates a SKU for a zero-SKU product and includes every field in the next atomic product save', async () => {
     const zeroSkuProduct = {
-      id: 'spu-empty', name: '空白商品', categoryId: 'cat-1', brandId: 'brand-1',
+      id: 'spu-empty', name: '空白商品', categoryId: 'cat-1', subCategoryId: 'sub-1', brandId: 'brand-1',
       imageUrl: null, description: null, enabled: true, skus: [],
     }
     const createdSku = {
@@ -175,7 +194,7 @@ describe('CatalogView', () => {
     await flushPromises()
 
     expect(api.quickCreateSku).toHaveBeenCalledWith({
-      existingSpuId: 'spu-empty', categoryId: 'cat-1', brandId: 'brand-1', productName: '空白商品',
+      existingSpuId: 'spu-empty', subCategoryId: 'sub-1', brandId: 'brand-1', productName: '空白商品',
       skuCode: 'NEW-42', barcode: '6900000000042', specs: { 颜色: '蓝色', 尺码: '42' },
       retailPrice: 199, warningStock: 4,
     })

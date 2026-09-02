@@ -1,5 +1,15 @@
 export interface Category {
   id: string
+  code: string
+  name: string
+  sortOrder: number
+  enabled: boolean
+}
+
+export interface SubCategory {
+  id: string
+  categoryId: string
+  code: string
   name: string
   sortOrder: number
   enabled: boolean
@@ -27,6 +37,7 @@ export interface Product {
   id: string
   name: string
   categoryId: string
+  subCategoryId: string
   brandId: string
   imageUrl: string | null
   description: string | null
@@ -42,7 +53,7 @@ export interface Page<T> {
 }
 
 export interface QuickCreateSkuRequest {
-  categoryId: string
+  subCategoryId: string
   brandId: string
   existingSpuId: string | null
   productName: string
@@ -55,7 +66,7 @@ export interface QuickCreateSkuRequest {
 
 export interface ProductUpdateRequest {
   productName: string
-  categoryId: string
+  subCategoryId: string
   brandId: string
   imageUrl: string | null
   description: string | null

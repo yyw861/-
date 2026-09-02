@@ -8,6 +8,8 @@ import { useInboundDraftStore } from '../stores/inboundDraft'
 
 const catalogApi = vi.hoisted(() => ({
   getCategories: vi.fn(),
+  getSubCategories: vi.fn(),
+  findCategoryByPrefix: vi.fn(),
   getBrands: vi.fn(),
   getProducts: vi.fn(),
   findSkuByBarcode: vi.fn(),
@@ -22,8 +24,9 @@ const inboundApi = vi.hoisted(() => ({ confirmInbound: vi.fn() }))
 vi.mock('../../catalog/api', () => catalogApi)
 vi.mock('../api', () => inboundApi)
 
-const categoryA = { id: 'cat-a', name: '球类', sortOrder: 1, enabled: true }
-const categoryB = { id: 'cat-b', name: '服装', sortOrder: 2, enabled: true }
+const categoryA = { id: 'cat-a', code: '69', name: '球类', sortOrder: 1, enabled: true }
+const categoryB = { id: 'cat-b', code: '68', name: '服装', sortOrder: 2, enabled: true }
+const subCategoryA = { id: 'sub-a', categoryId: categoryA.id, code: '01', name: '篮球', sortOrder: 1, enabled: true }
 const sku = {
   id: 'sku-1',
   spuId: 'spu-1',
@@ -46,26 +49,27 @@ describe('InboundView', () => {
     document.body.innerHTML = ''
     vi.clearAllMocks()
     catalogApi.getCategories.mockResolvedValue([categoryA, categoryB])
+    catalogApi.getSubCategories.mockResolvedValue([subCategoryA])
+    catalogApi.findCategoryByPrefix.mockResolvedValue(categoryA)
     catalogApi.getBrands.mockResolvedValue([{ id: 'brand-1', name: '飞跃', remark: null, enabled: true }])
     catalogApi.getProducts.mockResolvedValue({ items: [], total: 0, page: 0, size: 100 })
     catalogApi.getProduct.mockResolvedValue({
-      id: 'spu-1', name: '训练篮球', categoryId: categoryA.id, brandId: 'brand-1',
+      id: 'spu-1', name: '训练篮球', categoryId: categoryA.id, subCategoryId: subCategoryA.id, brandId: 'brand-1',
       imageUrl: null, description: null, enabled: true, skus: [sku],
     })
   })
 
-  it('requires a category before scanning', async () => {
+  it('allows scanning before any manual category selection', async () => {
     const wrapper = mountView()
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="scan-submit"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="barcode-input"]').attributes('disabled')).toBeUndefined()
   })
 
   it('locks scanning while a known SKU is pending, moves quantity to cost, then restores scanning after adding', async () => {
     catalogApi.findSkuByBarcode.mockResolvedValue(sku)
     const wrapper = mountView()
     await flushPromises()
-    await wrapper.get('[data-testid="category-select"]').setValue(categoryA.id)
     const barcode = wrapper.get('[data-testid="barcode-input"]')
     await barcode.setValue(sku.barcode)
     await wrapper.get('[data-testid="scan-form"]').trigger('submit')
@@ -93,20 +97,22 @@ describe('InboundView', () => {
     expect(document.activeElement).toBe(barcode.element)
   })
 
-  it('opens quick create for an unknown barcode with its category locked', async () => {
+  it('opens quick create for an unknown barcode with its recognized major and minor choices', async () => {
     catalogApi.findSkuByBarcode.mockRejectedValue({ response: { status: 404 } })
     const wrapper = mountView()
     await flushPromises()
-    await wrapper.get('[data-testid="category-select"]').setValue(categoryA.id)
-    await wrapper.get('[data-testid="barcode-input"]').setValue('UNKNOWN-1')
+    await wrapper.get('[data-testid="barcode-input"]').setValue('6912345678901')
     await wrapper.get('[data-testid="scan-form"]').trigger('submit')
     await flushPromises()
 
     expect(wrapper.get('[data-testid="quick-create-dialog"]').text()).toContain('快速建档')
-    expect(wrapper.get('[data-testid="quick-category"]').attributes('disabled')).toBeDefined()
-    expect((wrapper.get('[data-testid="quick-barcode"]').element as HTMLInputElement).value).toBe('UNKNOWN-1')
+    expect(catalogApi.findCategoryByPrefix).toHaveBeenCalledWith('69')
+    expect(wrapper.get('[data-testid="quick-major-category"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="quick-major-category"]').text()).toContain('')
+    expect((wrapper.get('[data-testid="quick-major-category"]').element as HTMLInputElement).value).toContain('69 球类')
+    expect(wrapper.findAll('[data-testid="quick-sub-category-option"]')).toHaveLength(1)
+    expect((wrapper.get('[data-testid="quick-barcode"]').element as HTMLInputElement).value).toBe('6912345678901')
     expect(wrapper.get('[data-testid="barcode-input"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('[data-testid="category-select"]').attributes('disabled')).toBeDefined()
     expect(wrapper.find('.el-dialog').exists()).toBe(true)
     await vi.waitFor(() => {
       expect(document.activeElement).toBe(wrapper.get('[data-testid="quick-product-name"]').element)
@@ -117,20 +123,16 @@ describe('InboundView', () => {
     expect(document.activeElement).toBe(wrapper.get('[data-testid="barcode-input"]').element)
   })
 
-  it('submits an unknown barcode against its scanned category snapshot even if backing selection changes', async () => {
-    const newSku = { ...sku, id: 'sku-snapshot', spuId: 'spu-snapshot', barcode: 'SNAPSHOT-1' }
+  it('submits an unknown barcode against its selected minor category', async () => {
+    const newSku = { ...sku, id: 'sku-snapshot', spuId: 'spu-snapshot', barcode: '6912345678902' }
     catalogApi.findSkuByBarcode.mockRejectedValue({ response: { status: 404 } })
     catalogApi.quickCreateSku.mockResolvedValue(newSku)
     const wrapper = mountView()
     await flushPromises()
-    await wrapper.get('[data-testid="category-select"]').setValue(categoryA.id)
-    await wrapper.get('[data-testid="barcode-input"]').setValue('SNAPSHOT-1')
+    await wrapper.get('[data-testid="barcode-input"]').setValue('6912345678902')
     await wrapper.get('[data-testid="scan-form"]').trigger('submit')
     await flushPromises()
 
-    useInboundDraftStore().selectCategory(categoryB.id)
-    await flushPromises()
-    expect((wrapper.get('[data-testid="quick-category"]').element as HTMLInputElement).value).toBe(categoryA.name)
     await wrapper.get('[data-testid="quick-product-name"]').setValue('快照篮球')
     await wrapper.get('[data-testid="quick-sku-code"]').setValue('SNAP-1')
     await wrapper.get('[data-testid="quick-retail-price"]').setValue('88')
@@ -138,18 +140,17 @@ describe('InboundView', () => {
     await flushPromises()
 
     expect(catalogApi.quickCreateSku).toHaveBeenCalledWith(expect.objectContaining({
-      categoryId: categoryA.id, barcode: 'SNAPSHOT-1', productName: '快照篮球',
+      subCategoryId: subCategoryA.id, barcode: '6912345678902', productName: '快照篮球',
     }))
   })
 
   it('backfills a newly created SKU but still requires quantity and cost before adding stock', async () => {
-    const newSku = { ...sku, id: 'sku-new', spuId: 'spu-new', skuCode: 'NEW-01', barcode: 'UNKNOWN-2' }
+    const newSku = { ...sku, id: 'sku-new', spuId: 'spu-new', skuCode: 'NEW-01', barcode: '6912345678903' }
     catalogApi.findSkuByBarcode.mockRejectedValue({ response: { status: 404 } })
     catalogApi.quickCreateSku.mockResolvedValue(newSku)
     const wrapper = mountView()
     await flushPromises()
-    await wrapper.get('[data-testid="category-select"]').setValue(categoryA.id)
-    await wrapper.get('[data-testid="barcode-input"]').setValue('UNKNOWN-2')
+    await wrapper.get('[data-testid="barcode-input"]').setValue('6912345678903')
     await wrapper.get('[data-testid="scan-form"]').trigger('submit')
     await flushPromises()
 
@@ -160,7 +161,7 @@ describe('InboundView', () => {
     await flushPromises()
 
     expect(catalogApi.quickCreateSku).toHaveBeenCalledWith(expect.objectContaining({
-      categoryId: categoryA.id, barcode: 'UNKNOWN-2', productName: '新款篮球', skuCode: 'NEW-01',
+      subCategoryId: subCategoryA.id, barcode: '6912345678903', productName: '新款篮球', skuCode: 'NEW-01',
     }))
     expect(wrapper.find('[data-testid="quick-create-dialog"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="pending-sku"]').text()).toContain('新款篮球')
@@ -172,7 +173,7 @@ describe('InboundView', () => {
 
   it('loads later product pages so an existing SPU after the first 100 remains selectable', async () => {
     const product = (index: number) => ({
-      id: `spu-${index}`, name: `商品${index}`, categoryId: categoryA.id, brandId: 'brand-1',
+      id: `spu-${index}`, name: `商品${index}`, categoryId: categoryA.id, subCategoryId: subCategoryA.id, brandId: 'brand-1',
       imageUrl: null, description: null, enabled: true, skus: [],
     })
     catalogApi.getProducts
@@ -181,8 +182,7 @@ describe('InboundView', () => {
     catalogApi.findSkuByBarcode.mockRejectedValue({ response: { status: 404 } })
     const wrapper = mountView()
     await flushPromises()
-    await wrapper.get('[data-testid="category-select"]').setValue(categoryA.id)
-    await wrapper.get('[data-testid="barcode-input"]').setValue('UNKNOWN-101')
+    await wrapper.get('[data-testid="barcode-input"]').setValue('6912345678101')
     await wrapper.get('[data-testid="scan-form"]').trigger('submit')
     await flushPromises()
 
@@ -194,8 +194,7 @@ describe('InboundView', () => {
     catalogApi.findSkuByBarcode.mockRejectedValue({ response: { status: 404 } })
     const wrapper = mountView()
     await flushPromises()
-    await wrapper.get('[data-testid="category-select"]').setValue(categoryA.id)
-    await wrapper.get('[data-testid="barcode-input"]').setValue('INVALID-NUMBER')
+    await wrapper.get('[data-testid="barcode-input"]').setValue('6912345678904')
     await wrapper.get('[data-testid="scan-form"]').trigger('submit')
     await flushPromises()
     await wrapper.get('[data-testid="quick-product-name"]').setValue('测试商品')
@@ -220,8 +219,7 @@ describe('InboundView', () => {
     catalogApi.quickCreateSku.mockReturnValue(new Promise(() => {}))
     const wrapper = mountView()
     await flushPromises()
-    await wrapper.get('[data-testid="category-select"]').setValue(categoryA.id)
-    await wrapper.get('[data-testid="barcode-input"]').setValue('CONCURRENT-1')
+    await wrapper.get('[data-testid="barcode-input"]').setValue('6912345678905')
     await wrapper.get('[data-testid="scan-form"]').trigger('submit')
     await flushPromises()
     await wrapper.get('[data-testid="quick-product-name"]').setValue('测试商品')
@@ -233,30 +231,30 @@ describe('InboundView', () => {
     expect(catalogApi.quickCreateSku).toHaveBeenCalledTimes(1)
   })
 
-  it('reports the actual category for a barcode from another category', async () => {
-    catalogApi.findSkuByBarcode.mockResolvedValue(sku)
-    catalogApi.getProduct.mockResolvedValue({
-      id: 'spu-1', name: '训练服', categoryId: categoryB.id, brandId: 'brand-1',
-      imageUrl: null, description: null, enabled: true, skus: [sku],
-    })
+  it('reports an unknown barcode prefix and directs the administrator to catalog management', async () => {
+    catalogApi.findSkuByBarcode.mockRejectedValue({ response: { status: 404 } })
+    catalogApi.findCategoryByPrefix.mockRejectedValue({ response: { status: 404 } })
     const wrapper = mountView()
     await flushPromises()
-    await wrapper.get('[data-testid="category-select"]').setValue(categoryA.id)
-    await wrapper.get('[data-testid="barcode-input"]').setValue(sku.barcode)
+    await wrapper.get('[data-testid="barcode-input"]').setValue('7712345678901')
     await wrapper.get('[data-testid="scan-form"]').trigger('submit')
     await flushPromises()
 
-    expect(wrapper.get('[role="alert"]').text()).toContain('实际分类为“服装”')
+    expect(wrapper.get('[role="alert"]').text()).toContain('请先到商品管理建立对应大类')
     expect(wrapper.find('[data-testid="pending-sku"]').exists()).toBe(false)
   })
 
-  it('keeps draft lines when the selected category changes', async () => {
+  it('keeps draft lines when a later scan has an unknown prefix', async () => {
     const wrapper = mountView()
     await flushPromises()
     const store = useInboundDraftStore()
     store.addLine({ sku, productName: '训练篮球', quantity: 1, unitCost: 80 })
 
-    await wrapper.get('[data-testid="category-select"]').setValue(categoryB.id)
+    catalogApi.findSkuByBarcode.mockRejectedValue({ response: { status: 404 } })
+    catalogApi.findCategoryByPrefix.mockRejectedValue({ response: { status: 404 } })
+    await wrapper.get('[data-testid="barcode-input"]').setValue('7712345678902')
+    await wrapper.get('[data-testid="scan-form"]').trigger('submit')
+    await flushPromises()
     expect(store.lines).toHaveLength(1)
     expect(wrapper.get('[data-testid="draft-table"]').text()).toContain('训练篮球')
   })
