@@ -9,8 +9,8 @@ export async function getSalesSummary(fromDate: string, toDate: string) {
 export async function getProductRanking(fromDate: string, toDate: string, limit = 100) {
   return (await http.get<ProductRanking[]>('/reports/products', { params: { ...rangeParams(fromDate, toDate), limit } })).data
 }
-export async function getCategoryShare(fromDate: string, toDate: string) {
-  return (await http.get<CategoryShare[]>('/reports/categories', { params: rangeParams(fromDate, toDate) })).data
+export async function getCategoryShare(fromDate: string, toDate: string, categoryId?: string) {
+  return (await http.get<CategoryShare[]>('/reports/categories', { params: { ...rangeParams(fromDate, toDate), ...(categoryId ? { categoryId } : {}) } })).data
 }
 export async function getInboundSummary(fromDate: string, toDate: string) {
   return (await http.get<InboundSummary>('/reports/inbound', { params: rangeParams(fromDate, toDate) })).data

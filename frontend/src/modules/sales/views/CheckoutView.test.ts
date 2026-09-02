@@ -18,10 +18,10 @@ vi.mock('../api', () => salesApi)
 
 const sku = { id: 'sku-1', spuId: 'spu-1', skuCode: 'BALL-01', barcode: '69001', specs: {}, retailPrice: 150,
   warningStock: 2, enabled: true }
-const product = { id: 'spu-1', name: '训练篮球', categoryId: 'cat-1', brandId: 'brand-1', imageUrl: null,
+const product = { id: 'spu-1', name: '训练篮球', categoryId: 'cat-1', subCategoryId: 'sub-1', brandId: 'brand-1', imageUrl: null,
   description: null, enabled: true, skus: [sku] }
 const inventory = { skuId: sku.id, productId: product.id, productName: product.name, categoryId: 'cat-1',
-  categoryName: '球类', brandId: 'brand-1', brandName: '品牌', skuCode: sku.skuCode, barcode: sku.barcode,
+  categoryCode: '69', categoryName: '球类', subCategoryId: 'sub-1', subCategoryCode: '01', subCategoryName: '篮球', brandId: 'brand-1', brandName: '品牌', skuCode: sku.skuCode, barcode: sku.barcode,
   retailPrice: 150, warningStock: 2, enabled: true, quantity: 2, averageCost: 100, inventoryValue: 200,
   version: 1, updatedAt: '2026-08-05T00:00:00Z' }
 

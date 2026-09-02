@@ -289,7 +289,7 @@ git commit -m "feat: scan barcodes before selecting minor category"
 - Consumes: Task 3 分类上下文和报表下钻响应。
 - Produces: 库存/CSV 两级分类列、报表大类汇总和小类下钻、完整用户验收流程。
 
-- [ ] **Step 1: 写 CSV 与报表下钻失败测试**
+- [x] **Step 1: 写 CSV 与报表下钻失败测试**
 
 ```ts
 expect(csv).toContain('大类编号,大类名称,小类编号,小类名称')
@@ -297,17 +297,17 @@ await wrapper.get('[data-testid="category-share-drilldown"]').setValue(majorId)
 expect(getCategoryShare).toHaveBeenLastCalledWith(range, majorId)
 ```
 
-- [ ] **Step 2: 运行库存导出和报表页面测试并确认失败**
+- [x] **Step 2: 运行库存导出和报表页面测试并确认失败**
 
 Run: `npm test -- --run src/modules/inventory src/modules/reports`
 
 Expected: FAIL，旧类型与页面没有两级分类字段。
 
-- [ ] **Step 3: 实现库存、CSV 和报表页面适配并更新说明**
+- [x] **Step 3: 实现库存、CSV 和报表页面适配并更新说明**
 
 页面以 `编号 + 名称` 展示大类和小类；报表初始请求不传大类 ID，选择大类后重新请求小类明细；README 记录编号和扫码规则。
 
-- [ ] **Step 4: 运行完整验证**
+- [x] **Step 4: 运行约定的关键验证**
 
 Run: `mvn -q test`
 
@@ -319,7 +319,9 @@ Run: `npm run test:e2e`
 
 Expected: 所有命令退出码为 0，构建无 TypeScript 错误，端到端覆盖未知前缀、未知 SKU 快速建档、再次扫码直接入库和报表下钻。
 
-- [ ] **Step 5: 提交最终适配**
+实际验证：后端完整测试、前端完整单元测试和正式构建通过。端到端脚本已适配新流程；因执行环境额度限制且用户要求减少测试，本次未启动浏览器套件。
+
+- [x] **Step 5: 提交最终适配**
 
 ```bash
 git add frontend README.md

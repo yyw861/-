@@ -1,14 +1,19 @@
 import { expect, test } from '@playwright/test'
 
-const barcode = '6900000000099'
+const barcode = '6700000000099'
 
 test('扫码销售并按原单部分退货后金额、库存和成本一致', async ({ page }) => {
   await page.goto('/catalog')
   const categories = page.locator('section[aria-labelledby="categories-title"]')
-  const categoryCount = await categories.getByLabel('分类名称').count()
-  await categories.getByLabel('分类名称').first().fill('销售验收分类')
-  await categories.getByRole('button', { name: '新增分类' }).click()
-  await expect(categories.getByLabel('分类名称')).toHaveCount(categoryCount + 1)
+  const majorForm = categories.locator('form').nth(0)
+  await majorForm.getByLabel('两位编号').fill('67')
+  await majorForm.getByLabel('大类名称').fill('销售验收球类')
+  await majorForm.getByRole('button', { name: '新增大类' }).click()
+  const minorForm = categories.locator('form').nth(1)
+  await minorForm.getByLabel('所属大类').selectOption({ label: '67 销售验收球类' })
+  await minorForm.getByLabel('两位编号').fill('01')
+  await minorForm.getByLabel('小类名称').fill('销售验收篮球')
+  await minorForm.getByRole('button', { name: '新增小类' }).click()
   const brands = page.locator('section[aria-labelledby="brands-title"]')
   const brandCount = await brands.getByLabel('品牌名称').count()
   await brands.getByLabel('品牌名称').first().fill('销售验收品牌')
@@ -16,10 +21,10 @@ test('扫码销售并按原单部分退货后金额、库存和成本一致', as
   await expect(brands.getByLabel('品牌名称')).toHaveCount(brandCount + 1)
 
   await page.goto('/inbounds')
-  await page.getByLabel('当前分类').selectOption({ label: '销售验收分类' })
   await page.getByTestId('barcode-input').fill(barcode)
   await page.getByTestId('scan-submit').click()
   const create = page.getByTestId('quick-create-dialog')
+  await create.getByTestId('quick-sub-category').selectOption({ label: '01 销售验收篮球' })
   await create.getByTestId('quick-product-name').fill('销售验收篮球')
   await create.getByLabel('品牌').selectOption({ label: '销售验收品牌' })
   await create.getByTestId('quick-sku-code').fill('SALE-E2E-01')
@@ -54,8 +59,8 @@ test('扫码销售并按原单部分退货后金额、库存和成本一致', as
 
   await page.goto('/inventory')
   let row = page.getByRole('row').filter({ hasText: barcode })
-  await expect(row.locator('td').nth(4)).toHaveText('8')
-  await expect(row.locator('td').nth(5)).toHaveText('100.0000')
+  await expect(row.locator('td').nth(6)).toHaveText('8')
+  await expect(row.locator('td').nth(7)).toHaveText('100.0000')
 
   await page.goto('/sales/history')
   const saleRow = page.getByRole('row').filter({ hasText: saleNo })
@@ -70,6 +75,6 @@ test('扫码销售并按原单部分退货后金额、库存和成本一致', as
 
   await page.goto('/inventory')
   row = page.getByRole('row').filter({ hasText: barcode })
-  await expect(row.locator('td').nth(4)).toHaveText('9')
-  await expect(row.locator('td').nth(5)).toHaveText('100.0000')
+  await expect(row.locator('td').nth(6)).toHaveText('9')
+  await expect(row.locator('td').nth(7)).toHaveText('100.0000')
 })

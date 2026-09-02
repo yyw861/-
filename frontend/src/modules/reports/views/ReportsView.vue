@@ -24,6 +24,8 @@ const inbound = ref<InboundSummary>(zeroInbound)
 const inventory = ref<InventoryValuation>(zeroInventory)
 const ranking = ref<ProductRanking[]>([])
 const categories = ref<CategoryShare[]>([])
+const majorCategories = ref<CategoryShare[]>([])
+const selectedCategoryId = ref('')
 const lowStock = ref<LowStockItem[]>([])
 const loading = ref(false)
 const alert = ref('')
@@ -65,17 +67,24 @@ async function load(candidateFrom = appliedFrom.value, candidateTo = appliedTo.v
   const request = ++requestSequence
   loading.value=true; alert.value=''
   try {
-    const [salesValue,rankingValue,categoryValue,inboundValue,inventoryValue,lowStockValue] = await Promise.all([
+    const majorRequest = getCategoryShare(candidateFrom,candidateTo)
+    const scopedRequest = selectedCategoryId.value
+      ? getCategoryShare(candidateFrom,candidateTo,selectedCategoryId.value) : majorRequest
+    const [salesValue,rankingValue,majorCategoryValue,categoryValue,inboundValue,inventoryValue,lowStockValue] = await Promise.all([
       getSalesSummary(candidateFrom,candidateTo), getProductRanking(candidateFrom,candidateTo),
-      getCategoryShare(candidateFrom,candidateTo), getInboundSummary(candidateFrom,candidateTo),
+      majorRequest, scopedRequest, getInboundSummary(candidateFrom,candidateTo),
       getInventoryValuation(), getLowStock(),
     ])
     if (request !== requestSequence) return
-    sales.value=salesValue;ranking.value=rankingValue;categories.value=categoryValue
+    sales.value=salesValue;ranking.value=rankingValue;majorCategories.value=majorCategoryValue;categories.value=categoryValue
     inbound.value=inboundValue;inventory.value=inventoryValue;lowStock.value=lowStockValue
     appliedFrom.value=candidateFrom;appliedTo.value=candidateTo
   } catch(cause) { if(request===requestSequence) alert.value=errorMessage(cause) }
   finally { if(request===requestSequence) loading.value=false }
+}
+
+async function changeCategoryScope() {
+  await load(appliedFrom.value, appliedTo.value)
 }
 </script>
 
@@ -85,9 +94,9 @@ async function load(candidateFrom = appliedFrom.value, candidateTo = appliedTo.v
     <p v-if="alert" role="alert" class="alert">{{alert}}</p><p v-if="loading" class="loading">正在汇总数据…</p>
     <template v-else>
       <section class="metrics" aria-label="报表指标"><article><span>净销售额</span><strong>{{formatCurrency(sales.netSalesAmount)}}</strong><small>退款 {{formatCurrency(sales.refundAmount)}}</small></article><article><span>销售毛利</span><strong>{{formatCurrency(sales.grossProfit)}}</strong><small>{{sales.orderCount}} 笔销售 · 净售 {{sales.netQuantity}} 件</small></article><article><span>进货金额</span><strong>{{formatCurrency(inbound.totalAmount)}}</strong><small>{{inbound.orderCount}} 单 · {{inbound.totalQuantity}} 件</small></article><article><span>库存成本</span><strong>{{formatCurrency(inventory.totalCost)}}</strong><small>{{inventory.skuCount}} 个 SKU · {{inventory.totalQuantity}} 件</small></article></section>
-      <section class="chart-grid"><article class="card"><h2>销售与毛利趋势</h2><SalesTrendChart v-if="sales.trend.length" :points="sales.trend"/><p v-else class="empty">暂无销售趋势</p></article><article class="card"><h2>分类销售占比</h2><CategoryShareChart v-if="categories.length" :items="categories"/><p v-else class="empty">暂无分类销售数据</p></article></section>
-      <section class="card"><div class="section-heading"><div><h2>商品销量排行</h2><p>{{appliedFrom}} 至 {{appliedTo}}，按净销量排序。</p></div><button data-testid="export-ranking" type="button" :disabled="!ranking.length" @click="downloadRankingCsv(ranking,appliedFrom,appliedTo)">导出排行</button></div><div class="table-wrap"><table><thead><tr><th>商品</th><th>SKU</th><th>条码</th><th>销售</th><th>退货</th><th>净销量</th><th>净销售额</th></tr></thead><tbody><tr v-for="item in ranking" :key="item.skuId"><td>{{item.productName}}</td><td>{{item.skuCode}}</td><td>{{item.barcode}}</td><td>{{item.grossQuantity}}</td><td>{{item.returnedQuantity}}</td><td>{{item.netQuantity}}</td><td>{{formatCurrency(item.netSalesAmount)}}</td></tr><tr v-if="!ranking.length"><td colspan="7" class="empty">暂无商品排行</td></tr></tbody></table></div></section>
-      <section class="card"><h2>低库存商品</h2><div class="table-wrap"><table><thead><tr><th>商品</th><th>SKU</th><th>条码</th><th>当前库存</th><th>预警库存</th></tr></thead><tbody><tr v-for="item in lowStock" :key="item.skuId"><td>{{item.productName}}</td><td>{{item.skuCode}}</td><td>{{item.barcode}}</td><td>{{item.quantity}}</td><td>{{item.warningStock}}</td></tr><tr v-if="!lowStock.length"><td colspan="5" class="empty">暂无低库存商品</td></tr></tbody></table></div></section>
+      <section class="chart-grid"><article class="card"><h2>销售与毛利趋势</h2><SalesTrendChart v-if="sales.trend.length" :points="sales.trend"/><p v-else class="empty">暂无销售趋势</p></article><article class="card"><div class="section-heading"><h2>{{ selectedCategoryId ? '小类销售占比' : '大类销售占比' }}</h2><label>查看层级<select v-model="selectedCategoryId" data-testid="category-share-drilldown" @change="changeCategoryScope"><option value="">全部大类</option><option v-for="item in majorCategories" :key="item.categoryId" :value="item.categoryId">{{item.categoryCode}} {{item.categoryName}}</option></select></label></div><CategoryShareChart v-if="categories.length" :items="categories"/><p v-else class="empty">暂无分类销售数据</p></article></section>
+      <section class="card"><div class="section-heading"><div><h2>商品销量排行</h2><p>{{appliedFrom}} 至 {{appliedTo}}，按净销量排序。</p></div><button data-testid="export-ranking" type="button" :disabled="!ranking.length" @click="downloadRankingCsv(ranking,appliedFrom,appliedTo)">导出排行</button></div><div class="table-wrap"><table><thead><tr><th>商品</th><th>大类</th><th>小类</th><th>SKU</th><th>条码</th><th>销售</th><th>退货</th><th>净销量</th><th>净销售额</th></tr></thead><tbody><tr v-for="item in ranking" :key="item.skuId"><td>{{item.productName}}</td><td>{{item.categoryCode}} {{item.categoryName}}</td><td>{{item.subCategoryCode}} {{item.subCategoryName}}</td><td>{{item.skuCode}}</td><td>{{item.barcode}}</td><td>{{item.grossQuantity}}</td><td>{{item.returnedQuantity}}</td><td>{{item.netQuantity}}</td><td>{{formatCurrency(item.netSalesAmount)}}</td></tr><tr v-if="!ranking.length"><td colspan="9" class="empty">暂无商品排行</td></tr></tbody></table></div></section>
+      <section class="card"><h2>低库存商品</h2><div class="table-wrap"><table><thead><tr><th>商品</th><th>大类</th><th>小类</th><th>SKU</th><th>条码</th><th>当前库存</th><th>预警库存</th></tr></thead><tbody><tr v-for="item in lowStock" :key="item.skuId"><td>{{item.productName}}</td><td>{{item.categoryCode}} {{item.categoryName}}</td><td>{{item.subCategoryCode}} {{item.subCategoryName}}</td><td>{{item.skuCode}}</td><td>{{item.barcode}}</td><td>{{item.quantity}}</td><td>{{item.warningStock}}</td></tr><tr v-if="!lowStock.length"><td colspan="7" class="empty">暂无低库存商品</td></tr></tbody></table></div></section>
     </template>
   </main>
 </template>

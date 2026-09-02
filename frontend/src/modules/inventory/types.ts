@@ -3,7 +3,11 @@ export interface InventoryItem {
   productId: string
   productName: string
   categoryId: string
+  categoryCode: string
   categoryName: string
+  subCategoryId: string
+  subCategoryCode: string
+  subCategoryName: string
   brandId: string
   brandName: string
   skuCode: string
