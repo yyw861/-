@@ -11,6 +11,7 @@ const exportTools = vi.hoisted(() => ({ downloadRankingCsv: vi.fn() }))
 vi.mock('../api', () => reportApi)
 vi.mock('../exportReportsCsv', () => exportTools)
 vi.mock('../components/SalesTrendChart.vue', () => ({ default: { template: '<div data-testid="trend-chart" />' } }))
+vi.mock('../components/CategoryShareChart.vue', () => ({ default: { template: '<div data-testid="category-share-chart" />' } }))
 
 const emptySales = { grossSalesAmount: '0.00', refundAmount: '0.00', netSalesAmount: '0.00',
   grossProfit: '0.00', orderCount: 0, netQuantity: 0, trend: [] }
@@ -54,6 +55,23 @@ describe('ReportsView', () => {
     await wrapper.get('[data-testid="apply-range"]').trigger('click')
     await flushPromises()
     expect(reportApi.getSalesSummary).toHaveBeenLastCalledWith('2026-08-10', '2026-08-20')
+  })
+
+  it('shows major category share first and drills down into its minor categories', async () => {
+    const major = { categoryId: 'cat-1', categoryCode: '69', categoryName: '球类',
+      subCategoryId: null, subCategoryCode: null, subCategoryName: null, netSalesAmount: '100.00' }
+    const minor = { categoryId: 'cat-1', categoryCode: '69', categoryName: '球类',
+      subCategoryId: 'sub-1', subCategoryCode: '01', subCategoryName: '篮球', netSalesAmount: '100.00' }
+    reportApi.getCategoryShare.mockResolvedValueOnce([major]).mockResolvedValueOnce([major]).mockResolvedValueOnce([minor])
+    const wrapper = mount(ReportsView)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('大类销售占比')
+    await wrapper.get('[data-testid="category-share-drilldown"]').setValue('cat-1')
+    await flushPromises()
+
+    expect(reportApi.getCategoryShare).toHaveBeenLastCalledWith('2026-08-24', '2026-08-24', 'cat-1')
+    expect(wrapper.text()).toContain('小类销售占比')
   })
 
   it('blocks custom ranges longer than 366 days without requesting data', async () => {

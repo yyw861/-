@@ -45,14 +45,15 @@ class SchemaMigrationTest {
                 FROM sqlite_master
                 WHERE type = 'table'
                   AND name IN ('category', 'brand', 'product_spu', 'product_sku', 'sku_spec',
+                               'sub_category',
                                'inventory_balance', 'inbound_order', 'inbound_line',
                                'stock_movement', 'idempotency_request')
                 """, String.class);
 
-        assertEquals(10, tableNames.size());
+        assertEquals(11, tableNames.size());
         assertEquals(List.of(
                 "brand", "category", "idempotency_request", "inbound_line", "inbound_order",
-                "inventory_balance", "product_sku", "product_spu", "sku_spec", "stock_movement"),
+                "inventory_balance", "product_sku", "product_spu", "sku_spec", "stock_movement", "sub_category"),
                 tableNames.stream().sorted().toList());
     }
 
@@ -68,7 +69,7 @@ class SchemaMigrationTest {
     @Test
     void declaresEveryTextPrimaryKeyNotNull() {
         for (String tableName : List.of(
-                "category", "brand", "product_spu", "product_sku", "sku_spec", "inventory_balance",
+                "category", "sub_category", "brand", "product_spu", "product_sku", "sku_spec", "inventory_balance",
                 "inbound_order", "inbound_line", "stock_movement", "idempotency_request")) {
             Integer primaryKeyNotNull = jdbcTemplate.queryForObject(
                     "SELECT \"notnull\" FROM pragma_table_info('" + tableName + "') WHERE pk > 0",
@@ -80,8 +81,8 @@ class SchemaMigrationTest {
     @Test
     void rejectsNullTextPrimaryKeys() {
         assertConstraint(SQLiteErrorCode.SQLITE_CONSTRAINT_NOTNULL, () -> jdbcTemplate.update("""
-                INSERT INTO category (id, name, sort_order, enabled, created_at, updated_at)
-                VALUES (NULL, '无主键分类', 0, 1, ?, ?)
+                INSERT INTO category (id, code, name, sort_order, enabled, created_at, updated_at)
+                VALUES (NULL, '99', '无主键分类', 0, 1, ?, ?)
                 """, TIMESTAMP, TIMESTAMP));
     }
 
@@ -90,8 +91,8 @@ class SchemaMigrationTest {
         assertEquals(1, jdbcTemplate.queryForObject("PRAGMA foreign_keys", Integer.class));
         assertConstraint(SQLiteErrorCode.SQLITE_CONSTRAINT_FOREIGNKEY, () -> jdbcTemplate.update("""
                 INSERT INTO product_spu
-                    (id, name, category_id, brand_id, image_url, description, enabled, created_at, updated_at)
-                VALUES ('orphan-spu', '无效商品', 'missing-category', 'missing-brand', NULL, NULL, 1, ?, ?)
+                    (id, name, sub_category_id, brand_id, image_url, description, enabled, created_at, updated_at)
+                VALUES ('orphan-spu', '无效商品', 'missing-sub-category', 'missing-brand', NULL, NULL, 1, ?, ?)
                 """, TIMESTAMP, TIMESTAMP));
     }
 
@@ -102,13 +103,42 @@ class SchemaMigrationTest {
         assertConstraint(SQLiteErrorCode.SQLITE_CONSTRAINT_UNIQUE, () -> jdbcTemplate.update("""
                 INSERT INTO product_sku
                     (id, spu_id, sku_code, barcode, retail_price, warning_stock, enabled, created_at, updated_at)
-                VALUES (?, ?, 'RUN-unique', '6900000000999', 199.00, 0, 1, ?, ?)
+                VALUES (?, ?, 'RUN-unique', '0199999999999', 199.00, 0, 1, ?, ?)
                 """, "sku-code-duplicate", "spu-unique", TIMESTAMP, TIMESTAMP));
         assertConstraint(SQLiteErrorCode.SQLITE_CONSTRAINT_UNIQUE, () -> jdbcTemplate.update("""
                 INSERT INTO product_sku
                     (id, spu_id, sku_code, barcode, retail_price, warning_stock, enabled, created_at, updated_at)
-                VALUES (?, ?, 'RUN-duplicate', '690000000000unique', 199.00, 0, 1, ?, ?)
+                VALUES (?, ?, 'RUN-duplicate', '0100000000001', 199.00, 0, 1, ?, ?)
                 """, "sku-barcode-duplicate", "spu-unique", TIMESTAMP, TIMESTAMP));
+    }
+
+    @Test
+    void rejectsMajorAndMinorCodesThatAreNotTwoDigits() {
+        assertConstraint(SQLiteErrorCode.SQLITE_CONSTRAINT_CHECK, () -> jdbcTemplate.update("""
+                INSERT INTO category (id, code, name, sort_order, enabled, created_at, updated_at)
+                VALUES ('category-invalid-code', 'A1', '错误大类', 0, 1, ?, ?)
+                """, TIMESTAMP, TIMESTAMP));
+
+        insertCatalogFixture("format");
+        assertConstraint(SQLiteErrorCode.SQLITE_CONSTRAINT_CHECK, () -> jdbcTemplate.update("""
+                INSERT INTO sub_category (id, category_id, code, name, sort_order, enabled, created_at, updated_at)
+                VALUES ('sub-category-invalid-code', 'category-format', '1', '错误小类', 0, 1, ?, ?)
+                """, TIMESTAMP, TIMESTAMP));
+    }
+
+    @Test
+    void rejectsBarcodeThatIsNotNumericOrIsShorterThanThreeDigits() {
+        insertCatalogFixture("barcode-format");
+        assertConstraint(SQLiteErrorCode.SQLITE_CONSTRAINT_CHECK, () -> jdbcTemplate.update("""
+                INSERT INTO product_sku
+                    (id, spu_id, sku_code, barcode, retail_price, warning_stock, enabled, created_at, updated_at)
+                VALUES ('sku-alpha-barcode', 'spu-barcode-format', 'ALPHA-BARCODE', '06A123', 1.00, 0, 1, ?, ?)
+                """, TIMESTAMP, TIMESTAMP));
+        assertConstraint(SQLiteErrorCode.SQLITE_CONSTRAINT_CHECK, () -> jdbcTemplate.update("""
+                INSERT INTO product_sku
+                    (id, spu_id, sku_code, barcode, retail_price, warning_stock, enabled, created_at, updated_at)
+                VALUES ('sku-short-barcode', 'spu-barcode-format', 'SHORT-BARCODE', '06', 1.00, 0, 1, ?, ?)
+                """, TIMESTAMP, TIMESTAMP));
     }
 
     @Test
@@ -118,7 +148,7 @@ class SchemaMigrationTest {
         assertConstraint(SQLiteErrorCode.SQLITE_CONSTRAINT_CHECK, () -> jdbcTemplate.update("""
                 INSERT INTO product_sku
                     (id, spu_id, sku_code, barcode, retail_price, warning_stock, enabled, created_at, updated_at)
-                VALUES (?, ?, 'RUN-money-2', '690000000000money2', 19.999, 0, 1, ?, ?)
+                VALUES (?, ?, 'RUN-money-2', '0200000000002', 19.999, 0, 1, ?, ?)
                 """, "sku-money-2", "spu-money", TIMESTAMP, TIMESTAMP));
         assertConstraint(SQLiteErrorCode.SQLITE_CONSTRAINT_CHECK, () -> jdbcTemplate.update("""
                 INSERT INTO inbound_order
@@ -175,7 +205,7 @@ class SchemaMigrationTest {
                     """.formatted(TIMESTAMP));
         }
 
-        Flyway.configure().dataSource(url, null, null).load().migrate();
+        Flyway.configure().dataSource(url, null, null).target("4").load().migrate();
 
         try (Connection connection = DriverManager.getConnection(url); Statement statement = connection.createStatement()) {
             try (ResultSet row = statement.executeQuery(
@@ -248,25 +278,38 @@ class SchemaMigrationTest {
     }
 
     private void insertCatalogFixture(String suffix) {
+        String categoryCode = switch (suffix) {
+            case "unique" -> "01";
+            case "money" -> "02";
+            case "average-cost" -> "03";
+            case "quantity" -> "04";
+            case "format" -> "05";
+            case "barcode-format" -> "06";
+            default -> throw new IllegalArgumentException("Unknown fixture suffix: " + suffix);
+        };
         jdbcTemplate.update("""
-                INSERT INTO category (id, name, sort_order, enabled, created_at, updated_at)
-                VALUES (?, ?, 0, 1, ?, ?)
-                """, "category-" + suffix, "分类-" + suffix, TIMESTAMP, TIMESTAMP);
+                INSERT INTO category (id, code, name, sort_order, enabled, created_at, updated_at)
+                VALUES (?, ?, ?, 0, 1, ?, ?)
+                """, "category-" + suffix, categoryCode, "分类-" + suffix, TIMESTAMP, TIMESTAMP);
+        jdbcTemplate.update("""
+                INSERT INTO sub_category (id, category_id, code, name, sort_order, enabled, created_at, updated_at)
+                VALUES (?, ?, '01', ?, 0, 1, ?, ?)
+                """, "sub-category-" + suffix, "category-" + suffix, "小类-" + suffix, TIMESTAMP, TIMESTAMP);
         jdbcTemplate.update("""
                 INSERT INTO brand (id, name, remark, enabled, created_at, updated_at)
                 VALUES (?, ?, NULL, 1, ?, ?)
                 """, "brand-" + suffix, "品牌-" + suffix, TIMESTAMP, TIMESTAMP);
         jdbcTemplate.update("""
                 INSERT INTO product_spu
-                    (id, name, category_id, brand_id, image_url, description, enabled, created_at, updated_at)
+                    (id, name, sub_category_id, brand_id, image_url, description, enabled, created_at, updated_at)
                 VALUES (?, ?, ?, ?, NULL, NULL, 1, ?, ?)
-                """, "spu-" + suffix, "跑鞋-" + suffix, "category-" + suffix, "brand-" + suffix,
+                """, "spu-" + suffix, "跑鞋-" + suffix, "sub-category-" + suffix, "brand-" + suffix,
                 TIMESTAMP, TIMESTAMP);
         jdbcTemplate.update("""
                 INSERT INTO product_sku
                     (id, spu_id, sku_code, barcode, retail_price, warning_stock, enabled, created_at, updated_at)
                 VALUES (?, ?, ?, ?, 199.00, 0, 1, ?, ?)
-                """, "sku-" + suffix, "spu-" + suffix, "RUN-" + suffix, "690000000000" + suffix,
+                """, "sku-" + suffix, "spu-" + suffix, "RUN-" + suffix, categoryCode + "00000000001",
                 TIMESTAMP, TIMESTAMP);
     }
 

@@ -52,7 +52,7 @@ class BackupServiceTest {
         assertThat(backup.status()).isEqualTo("SUCCEEDED");
         assertThat(backup.sha256()).hasSize(64);
         assertThat(backup.fileSize()).isEqualTo(Files.size(file)).isPositive();
-        assertThat(backupService.inspect(file).schemaVersion()).isEqualTo("4");
+        assertThat(backupService.inspect(file).schemaVersion()).isEqualTo("5");
     }
 
     @Test
@@ -99,7 +99,7 @@ class BackupServiceTest {
         try {
             assertThat(backupService.inspect(versionFive).compatible()).isTrue();
         } finally {
-            jdbc.update("UPDATE flyway_schema_history SET version='4' WHERE installed_rank=(SELECT MAX(installed_rank) FROM flyway_schema_history)");
+            jdbc.update("UPDATE flyway_schema_history SET version='5' WHERE installed_rank=(SELECT MAX(installed_rank) FROM flyway_schema_history)");
         }
     }
 

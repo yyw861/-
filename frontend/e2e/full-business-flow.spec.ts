@@ -2,17 +2,22 @@ import { expect, test } from '@playwright/test'
 
 test.setTimeout(120_000)
 
-const barcode = '6900000000777'
+const barcode = '6800000000777'
 const skuCode = 'FULL-E2E-01'
 const productName = '全流程验收篮球'
 
 test('从扫码入库到销售退货、盘点、报表和备份的完整业务链路', async ({ page }) => {
   await page.goto('/catalog')
   const categories = page.locator('section[aria-labelledby="categories-title"]')
-  await categories.getByLabel('分类名称').first().fill('全流程验收分类')
-  await categories.getByRole('button', { name: '新增分类' }).click()
-  await expect(categories.getByLabel('分类名称')).toHaveCount(2)
-  await expect(categories.getByLabel('分类名称').nth(1)).toHaveValue('全流程验收分类')
+  const majorForm = categories.locator('form').nth(0)
+  await majorForm.getByLabel('两位编号').fill('68')
+  await majorForm.getByLabel('大类名称').fill('全流程球类')
+  await majorForm.getByRole('button', { name: '新增大类' }).click()
+  const minorForm = categories.locator('form').nth(1)
+  await minorForm.getByLabel('所属大类').selectOption({ label: '68 全流程球类' })
+  await minorForm.getByLabel('两位编号').fill('01')
+  await minorForm.getByLabel('小类名称').fill('全流程篮球')
+  await minorForm.getByRole('button', { name: '新增小类' }).click()
   const brands = page.locator('section[aria-labelledby="brands-title"]')
   await brands.getByLabel('品牌名称').first().fill('全流程验收品牌')
   await brands.getByRole('button', { name: '新增品牌' }).click()
@@ -20,10 +25,10 @@ test('从扫码入库到销售退货、盘点、报表和备份的完整业务�
   await expect(brands.getByLabel('品牌名称').nth(1)).toHaveValue('全流程验收品牌')
 
   await page.goto('/inbounds')
-  await page.getByLabel('当前分类').selectOption({ label: '全流程验收分类' })
   await page.getByTestId('barcode-input').fill(barcode)
   await page.getByTestId('scan-submit').click()
   const create = page.getByTestId('quick-create-dialog')
+  await create.getByTestId('quick-sub-category').selectOption({ label: '01 全流程篮球' })
   await create.getByTestId('quick-product-name').fill(productName)
   await create.getByLabel('品牌').selectOption({ label: '全流程验收品牌' })
   await create.getByTestId('quick-sku-code').fill(skuCode)
@@ -36,7 +41,6 @@ test('从扫码入库到销售退货、盘点、报表和备份的完整业务�
   await expect(page.getByRole('status')).toContainText('入库成功')
 
   await page.goto('/inbounds')
-  await page.getByLabel('当前分类').selectOption({ label: '全流程验收分类' })
   await page.getByTestId('barcode-input').fill(barcode)
   await page.getByTestId('scan-submit').click()
   await page.getByTestId('pending-quantity').fill('10')
@@ -47,8 +51,8 @@ test('从扫码入库到销售退货、盘点、报表和备份的完整业务�
 
   await page.goto('/inventory')
   let inventoryRow = page.getByRole('row').filter({ hasText: barcode })
-  await expect(inventoryRow.locator('td').nth(4)).toHaveText('20')
-  await expect(inventoryRow.locator('td').nth(5)).toHaveText('110.0000')
+  await expect(inventoryRow.locator('td').nth(6)).toHaveText('20')
+  await expect(inventoryRow.locator('td').nth(7)).toHaveText('110.0000')
 
   await page.goto('/sales')
   await page.getByTestId('barcode-input').fill(barcode)
@@ -76,12 +80,12 @@ test('从扫码入库到销售退货、盘点、报表和备份的完整业务�
 
   await page.goto('/inventory')
   inventoryRow = page.getByRole('row').filter({ hasText: barcode })
-  await expect(inventoryRow.locator('td').nth(4)).toHaveText('19')
+  await expect(inventoryRow.locator('td').nth(6)).toHaveText('19')
   await inventoryRow.getByRole('button', { name: '库存调整' }).click()
   await page.getByTestId('counted-quantity').fill('18')
   await page.getByTestId('adjustment-reason').fill('破损报废')
   await page.getByTestId('confirm-adjustment').click()
-  await expect(page.getByRole('row').filter({ hasText: barcode }).locator('td').nth(4)).toHaveText('18')
+  await expect(page.getByRole('row').filter({ hasText: barcode }).locator('td').nth(6)).toHaveText('18')
 
   await page.goto('/')
   await expect(page.getByText('今日销售额')).toBeVisible()
@@ -90,8 +94,8 @@ test('从扫码入库到销售退货、盘点、报表和备份的完整业务�
   await page.goto('/reports')
   const rankingRow = page.getByRole('row').filter({ hasText: barcode })
   await expect(rankingRow).toContainText(skuCode)
-  await expect(rankingRow.locator('td').nth(5)).toHaveText('1')
-  await expect(rankingRow.locator('td').nth(6)).toContainText('180.00')
+  await expect(rankingRow.locator('td').nth(7)).toHaveText('1')
+  await expect(rankingRow.locator('td').nth(8)).toContainText('180.00')
 
   await page.goto('/settings')
   await page.getByTestId('create-backup').click()

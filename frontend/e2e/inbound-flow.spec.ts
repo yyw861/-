@@ -2,15 +2,19 @@ import { expect, test } from '@playwright/test'
 
 const barcode = '6900000000012'
 
-test('分类先行扫码入库后，库存余额、均价和来源单号一致', async ({ page }) => {
+test('扫码识别大类并选择小类入库后，库存余额、均价和来源单号一致', async ({ page }) => {
   await page.goto('/catalog')
 
   const categorySection = page.locator('section[aria-labelledby="categories-title"]')
-  const categoryCount = await categorySection.getByLabel('分类名称').count()
-  await categorySection.getByLabel('分类名称').first().fill('球类用品')
-  await categorySection.getByRole('button', { name: '新增分类' }).click()
-  await expect(categorySection.getByLabel('分类名称')).toHaveCount(categoryCount + 1)
-  await expect(categorySection.getByLabel('分类名称').last()).toHaveValue('球类用品')
+  const majorForm = categorySection.locator('form').nth(0)
+  await majorForm.getByLabel('两位编号').fill('69')
+  await majorForm.getByLabel('大类名称').fill('球类用品')
+  await majorForm.getByRole('button', { name: '新增大类' }).click()
+  const minorForm = categorySection.locator('form').nth(1)
+  await minorForm.getByLabel('所属大类').selectOption({ label: '69 球类用品' })
+  await minorForm.getByLabel('两位编号').fill('01')
+  await minorForm.getByLabel('小类名称').fill('篮球')
+  await minorForm.getByRole('button', { name: '新增小类' }).click()
 
   const brandSection = page.locator('section[aria-labelledby="brands-title"]')
   const brandCount = await brandSection.getByLabel('品牌名称').count()
@@ -20,12 +24,12 @@ test('分类先行扫码入库后，库存余额、均价和来源单号一致',
   await expect(brandSection.getByLabel('品牌名称').last()).toHaveValue('端到端测试品牌')
 
   await page.goto('/inbounds')
-  await page.getByLabel('当前分类').selectOption({ label: '球类用品' })
   await page.getByTestId('barcode-input').fill(barcode)
   await page.getByTestId('scan-submit').click()
 
   const quickCreate = page.getByTestId('quick-create-dialog')
-  await expect(quickCreate.getByTestId('quick-category')).toHaveValue('球类用品')
+  await expect(quickCreate.getByTestId('quick-major-category')).toHaveValue('69 球类用品')
+  await quickCreate.getByTestId('quick-sub-category').selectOption({ label: '01 篮球' })
   await expect(quickCreate.getByTestId('quick-barcode')).toHaveValue(barcode)
   await quickCreate.getByTestId('quick-product-name').fill('训练篮球')
   await quickCreate.getByLabel('品牌').selectOption({ label: '端到端测试品牌' })
@@ -46,8 +50,8 @@ test('分类先行扫码入库后，库存余额、均价和来源单号一致',
   await page.goto('/inventory')
   await expect(page.getByRole('heading', { name: '库存管理' })).toBeVisible()
   const inventoryRow = page.getByRole('row').filter({ hasText: barcode })
-  await expect(inventoryRow.locator('td').nth(4)).toHaveText('10')
-  await expect(inventoryRow.locator('td').nth(5)).toHaveText('100.0000')
+  await expect(inventoryRow.locator('td').nth(6)).toHaveText('10')
+  await expect(inventoryRow.locator('td').nth(7)).toHaveText('100.0000')
 
   await inventoryRow.getByRole('button', { name: '查看流水' }).click()
   const movementDialog = page.getByRole('dialog', { name: '库存流水' })

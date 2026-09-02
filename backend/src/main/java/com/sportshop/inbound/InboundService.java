@@ -136,12 +136,7 @@ public class InboundService {
 
     private void validateCatalog(List<ValidatedLine> lines) {
         for (ValidatedLine line : lines) {
-            var sku = catalogService.findSku(line.skuId())
-                    .orElseThrow(() -> new InboundValidationException("SKU not found"));
-            if (!sku.enabled()) throw new InboundValidationException("Disabled SKU cannot be received");
-            var product = catalogService.findProduct(sku.spuId())
-                    .orElseThrow(() -> new InboundValidationException("Product not found"));
-            if (!product.enabled()) throw new InboundValidationException("Disabled product cannot be received");
+            catalogService.requireSkuOperational(line.skuId());
         }
     }
 

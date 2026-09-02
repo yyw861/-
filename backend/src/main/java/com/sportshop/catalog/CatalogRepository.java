@@ -3,11 +3,11 @@ package com.sportshop.catalog;
 import com.sportshop.catalog.CatalogModels.BrandView;
 import com.sportshop.catalog.CatalogModels.CategoryView;
 import com.sportshop.catalog.CatalogModels.SkuView;
+import com.sportshop.catalog.CatalogModels.SubCategoryView;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.LinkedHashMap;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,11 +25,20 @@ class CatalogRepository {
         this.jdbc = jdbc;
     }
 
-    CategoryView insertCategory(UUID id, String name, int sortOrder, boolean enabled, String now) {
-        jdbc.sql("INSERT INTO category (id, name, sort_order, enabled, created_at, updated_at) VALUES (:id, :name, :sortOrder, :enabled, :now, :now)")
-                .param("id", id.toString()).param("name", name).param("sortOrder", sortOrder)
+    CategoryView insertCategory(UUID id, String code, String name, int sortOrder, boolean enabled, String now) {
+        jdbc.sql("INSERT INTO category (id, code, name, sort_order, enabled, created_at, updated_at) VALUES (:id, :code, :name, :sortOrder, :enabled, :now, :now)")
+                .param("id", id.toString()).param("code", code).param("name", name).param("sortOrder", sortOrder)
                 .param("enabled", bool(enabled)).param("now", now).update();
-        return new CategoryView(id, name, sortOrder, enabled);
+        return new CategoryView(id, code, name, sortOrder, enabled);
+    }
+
+    SubCategoryView insertSubCategory(UUID id, UUID categoryId, String code, String name, int sortOrder,
+                                      boolean enabled, String now) {
+        jdbc.sql("INSERT INTO sub_category (id, category_id, code, name, sort_order, enabled, created_at, updated_at) VALUES (:id, :categoryId, :code, :name, :sortOrder, :enabled, :now, :now)")
+                .param("id", id.toString()).param("categoryId", categoryId.toString()).param("code", code)
+                .param("name", name).param("sortOrder", sortOrder).param("enabled", bool(enabled))
+                .param("now", now).update();
+        return new SubCategoryView(id, categoryId, code, name, sortOrder, enabled);
     }
 
     BrandView insertBrand(UUID id, String name, String remark, boolean enabled, String now) {
@@ -55,6 +64,39 @@ class CatalogRepository {
     }
     boolean categoryNameExistsExcept(String name, UUID id) {
         return jdbc.sql("SELECT COUNT(*) FROM category WHERE name = :name AND id <> :id").param("name", name).param("id", id.toString()).query(Long.class).single() > 0;
+    }
+
+    boolean categoryCodeExists(String code) {
+        return jdbc.sql("SELECT COUNT(*) FROM category WHERE code = :code").param("code", code)
+                .query(Long.class).single() > 0;
+    }
+
+    boolean categoryCodeExistsExcept(String code, UUID id) {
+        return jdbc.sql("SELECT COUNT(*) FROM category WHERE code = :code AND id <> :id")
+                .param("code", code).param("id", id.toString()).query(Long.class).single() > 0;
+    }
+
+    boolean subCategoryExists(UUID id) {
+        return jdbc.sql("SELECT COUNT(*) FROM sub_category WHERE id = :id").param("id", id.toString())
+                .query(Long.class).single() > 0;
+    }
+
+    boolean subCategoryCodeExists(UUID categoryId, String code, UUID excludingId) {
+        String sql = excludingId == null
+                ? "SELECT COUNT(*) FROM sub_category WHERE category_id = :categoryId AND code = :code"
+                : "SELECT COUNT(*) FROM sub_category WHERE category_id = :categoryId AND code = :code AND id <> :id";
+        JdbcClient.StatementSpec statement = jdbc.sql(sql).param("categoryId", categoryId.toString()).param("code", code);
+        if (excludingId != null) statement.param("id", excludingId.toString());
+        return statement.query(Long.class).single() > 0;
+    }
+
+    boolean subCategoryNameExists(UUID categoryId, String name, UUID excludingId) {
+        String sql = excludingId == null
+                ? "SELECT COUNT(*) FROM sub_category WHERE category_id = :categoryId AND name = :name"
+                : "SELECT COUNT(*) FROM sub_category WHERE category_id = :categoryId AND name = :name AND id <> :id";
+        JdbcClient.StatementSpec statement = jdbc.sql(sql).param("categoryId", categoryId.toString()).param("name", name);
+        if (excludingId != null) statement.param("id", excludingId.toString());
+        return statement.query(Long.class).single() > 0;
     }
 
     boolean brandNameExists(String name) {
@@ -83,13 +125,13 @@ class CatalogRepository {
         return statement.query(Long.class).single() > 0;
     }
 
-    void insertSpu(UUID id, String name, UUID categoryId, UUID brandId, String now) {
-        insertSpu(id, name, categoryId, brandId, null, null, now);
+    void insertSpu(UUID id, String name, UUID subCategoryId, UUID brandId, String now) {
+        insertSpu(id, name, subCategoryId, brandId, null, null, now);
     }
 
-    void insertSpu(UUID id, String name, UUID categoryId, UUID brandId, String imageUrl, String description, String now) {
-        jdbc.sql("INSERT INTO product_spu (id, name, category_id, brand_id, image_url, description, enabled, created_at, updated_at) VALUES (:id, :name, :categoryId, :brandId, :imageUrl, :description, 1, :now, :now)")
-                .param("id", id.toString()).param("name", name).param("categoryId", categoryId.toString())
+    void insertSpu(UUID id, String name, UUID subCategoryId, UUID brandId, String imageUrl, String description, String now) {
+        jdbc.sql("INSERT INTO product_spu (id, name, sub_category_id, brand_id, image_url, description, enabled, created_at, updated_at) VALUES (:id, :name, :subCategoryId, :brandId, :imageUrl, :description, 1, :now, :now)")
+                .param("id", id.toString()).param("name", name).param("subCategoryId", subCategoryId.toString())
                 .param("brandId", brandId.toString()).param("imageUrl", imageUrl).param("description", description).param("now", now).update();
     }
 
@@ -154,10 +196,10 @@ class CatalogRepository {
         return specs.entrySet().stream().collect(java.util.stream.Collectors.toMap(Map.Entry::getKey, entry -> Map.copyOf(entry.getValue())));
     }
 
-    void updateSpu(UUID id, String name, UUID categoryId, UUID brandId, String imageUrl, String description,
+    void updateSpu(UUID id, String name, UUID subCategoryId, UUID brandId, String imageUrl, String description,
                    boolean enabled, String now) {
-        jdbc.sql("UPDATE product_spu SET name = :name, category_id = :categoryId, brand_id = :brandId, image_url = :imageUrl, description = :description, enabled = :enabled, updated_at = :now WHERE id = :id")
-                .param("id", id.toString()).param("name", name).param("categoryId", categoryId.toString())
+        jdbc.sql("UPDATE product_spu SET name = :name, sub_category_id = :subCategoryId, brand_id = :brandId, image_url = :imageUrl, description = :description, enabled = :enabled, updated_at = :now WHERE id = :id")
+                .param("id", id.toString()).param("name", name).param("subCategoryId", subCategoryId.toString())
                 .param("brandId", brandId.toString()).param("imageUrl", imageUrl).param("description", description)
                 .param("enabled", bool(enabled)).param("now", now).update();
     }
@@ -176,9 +218,25 @@ class CatalogRepository {
     }
 
     List<CategoryView> findCategories() {
-        return jdbc.sql("SELECT id, name, sort_order, enabled FROM category ORDER BY sort_order, name")
-                .query((rs, row) -> new CategoryView(uuid(rs, "id"), rs.getString("name"), rs.getInt("sort_order"),
+        return jdbc.sql("SELECT id, code, name, sort_order, enabled FROM category ORDER BY sort_order, code, name")
+                .query((rs, row) -> new CategoryView(uuid(rs, "id"), rs.getString("code"), rs.getString("name"), rs.getInt("sort_order"),
                         rs.getInt("enabled") == 1)).list();
+    }
+
+    Optional<CategoryView> findCategoryByCode(String code) {
+        return jdbc.sql("SELECT id, code, name, sort_order, enabled FROM category WHERE code = :code")
+                .param("code", code).query((rs, row) -> new CategoryView(uuid(rs, "id"), rs.getString("code"),
+                        rs.getString("name"), rs.getInt("sort_order"), rs.getInt("enabled") == 1)).optional();
+    }
+
+    Optional<SubCategoryView> findSubCategory(UUID id) {
+        return jdbc.sql("SELECT id, category_id, code, name, sort_order, enabled FROM sub_category WHERE id = :id")
+                .param("id", id.toString()).query(this::mapSubCategory).optional();
+    }
+
+    List<SubCategoryView> findSubCategories(UUID categoryId) {
+        return jdbc.sql("SELECT id, category_id, code, name, sort_order, enabled FROM sub_category WHERE category_id = :categoryId ORDER BY sort_order, code, name")
+                .param("categoryId", categoryId.toString()).query(this::mapSubCategory).list();
     }
 
     List<BrandView> findBrands() {
@@ -187,9 +245,36 @@ class CatalogRepository {
                         rs.getInt("enabled") == 1)).list();
     }
 
-    void updateCategory(UUID id, String name, int sortOrder, boolean enabled, String now) {
-        jdbc.sql("UPDATE category SET name = :name, sort_order = :sortOrder, enabled = :enabled, updated_at = :now WHERE id = :id").param("id", id.toString()).param("name", name).param("sortOrder", sortOrder)
+    void updateCategory(UUID id, String code, String name, int sortOrder, boolean enabled, String now) {
+        jdbc.sql("UPDATE category SET code = :code, name = :name, sort_order = :sortOrder, enabled = :enabled, updated_at = :now WHERE id = :id").param("id", id.toString()).param("code", code).param("name", name).param("sortOrder", sortOrder)
                 .param("enabled", bool(enabled)).param("now", now).update();
+    }
+
+    void updateSubCategory(UUID id, String code, String name, int sortOrder, boolean enabled, String now) {
+        jdbc.sql("UPDATE sub_category SET code = :code, name = :name, sort_order = :sortOrder, enabled = :enabled, updated_at = :now WHERE id = :id")
+                .param("id", id.toString()).param("code", code).param("name", name).param("sortOrder", sortOrder)
+                .param("enabled", bool(enabled)).param("now", now).update();
+    }
+
+    boolean categoryHasSkus(UUID categoryId) {
+        return jdbc.sql("SELECT COUNT(*) FROM product_sku sku JOIN product_spu product ON product.id = sku.spu_id JOIN sub_category minor ON minor.id = product.sub_category_id WHERE minor.category_id = :categoryId")
+                .param("categoryId", categoryId.toString()).query(Long.class).single() > 0;
+    }
+
+    Optional<CatalogChainRow> findCatalogChainBySku(UUID skuId) {
+        return jdbc.sql("""
+                SELECT sku.barcode, sku.enabled AS sku_enabled, product.enabled AS product_enabled,
+                       minor.enabled AS sub_category_enabled, category.enabled AS category_enabled,
+                       category.code AS category_code
+                  FROM product_sku sku
+                  JOIN product_spu product ON product.id = sku.spu_id
+                  JOIN sub_category minor ON minor.id = product.sub_category_id
+                  JOIN category category ON category.id = minor.category_id
+                 WHERE sku.id = :skuId
+                """).param("skuId", skuId.toString()).query((rs, row) -> new CatalogChainRow(
+                rs.getString("barcode"), rs.getInt("sku_enabled") == 1,
+                rs.getInt("product_enabled") == 1, rs.getInt("sub_category_enabled") == 1,
+                rs.getInt("category_enabled") == 1, rs.getString("category_code"))).optional();
     }
 
     void updateBrand(UUID id, String name, String remark, boolean enabled, String now) {
@@ -198,11 +283,11 @@ class CatalogRepository {
     }
 
     Optional<ProductRow> findProduct(UUID id) {
-        return jdbc.sql("SELECT id, name, category_id, brand_id, image_url, description, enabled FROM product_spu WHERE id = :id").param("id", id.toString()).query(this::mapProduct).optional();
+        return jdbc.sql("SELECT product.id, product.name, minor.category_id, product.sub_category_id, product.brand_id, product.image_url, product.description, product.enabled FROM product_spu product JOIN sub_category minor ON minor.id = product.sub_category_id WHERE product.id = :id").param("id", id.toString()).query(this::mapProduct).optional();
     }
 
     List<ProductRow> findProducts(int limit, int offset) {
-        return jdbc.sql("SELECT id, name, category_id, brand_id, image_url, description, enabled FROM product_spu ORDER BY updated_at DESC, id LIMIT :limit OFFSET :offset")
+        return jdbc.sql("SELECT product.id, product.name, minor.category_id, product.sub_category_id, product.brand_id, product.image_url, product.description, product.enabled FROM product_spu product JOIN sub_category minor ON minor.id = product.sub_category_id ORDER BY product.updated_at DESC, product.id LIMIT :limit OFFSET :offset")
                 .param("limit", limit).param("offset", offset).query(this::mapProduct).list();
     }
 
@@ -221,8 +306,13 @@ class CatalogRepository {
     }
 
     private ProductRow mapProduct(ResultSet rs, int rowNum) throws SQLException {
-        return new ProductRow(uuid(rs, "id"), rs.getString("name"), uuid(rs, "category_id"), uuid(rs, "brand_id"),
+        return new ProductRow(uuid(rs, "id"), rs.getString("name"), uuid(rs, "category_id"), uuid(rs, "sub_category_id"), uuid(rs, "brand_id"),
                 rs.getString("image_url"), rs.getString("description"), rs.getInt("enabled") == 1);
+    }
+
+    private SubCategoryView mapSubCategory(ResultSet rs, int rowNum) throws SQLException {
+        return new SubCategoryView(uuid(rs, "id"), uuid(rs, "category_id"), rs.getString("code"),
+                rs.getString("name"), rs.getInt("sort_order"), rs.getInt("enabled") == 1);
     }
 
     private static UUID uuid(ResultSet rs, String column) throws SQLException {
@@ -233,9 +323,11 @@ class CatalogRepository {
         return value ? 1 : 0;
     }
 
-    record ProductRow(UUID id, String name, UUID categoryId, UUID brandId, String imageUrl, String description,
+    record ProductRow(UUID id, String name, UUID categoryId, UUID subCategoryId, UUID brandId, String imageUrl, String description,
                       boolean enabled) {
     }
     record SkuRow(UUID id, UUID spuId, String skuCode, String barcode, BigDecimal retailPrice, int warningStock, boolean enabled) {}
     record SpecRow(UUID skuId, String name, String value) {}
+    record CatalogChainRow(String barcode, boolean skuEnabled, boolean productEnabled,
+                           boolean subCategoryEnabled, boolean categoryEnabled, String categoryCode) {}
 }

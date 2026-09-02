@@ -9,6 +9,7 @@ import com.sportshop.catalog.CatalogService;
 import com.sportshop.inventory.InventoryModels.InventoryQuery;
 import com.sportshop.inventory.InventoryModels.MovementSource;
 import com.sportshop.support.DatabaseTestSupport;
+import com.sportshop.support.CatalogTestSupport;
 import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.util.Map;
@@ -230,14 +231,14 @@ class InventoryServiceTest {
         setBalance(low.id(), 5, "12.3456", 0);
         setBalance(enough.id(), 9, "20.0000", 0);
 
-        var byName = inventoryService.search(new InventoryQuery(null, null, "running", null, null, false, 0, 20));
-        var bySku = inventoryService.search(new InventoryQuery(null, null, null, "RUN-LOW", null, false, 0, 20));
-        var byBarcode = inventoryService.search(new InventoryQuery(null, null, null, null, low.barcode(), false, 0, 20));
-        var lowStock = inventoryService.search(new InventoryQuery(null, null, null, null, null, true, 0, 20));
+        var byName = inventoryService.search(new InventoryQuery(null, null, null, "running", null, null, false, 0, 20));
+        var bySku = inventoryService.search(new InventoryQuery(null, null, null, null, "RUN-LOW", null, false, 0, 20));
+        var byBarcode = inventoryService.search(new InventoryQuery(null, null, null, null, null, low.barcode(), false, 0, 20));
+        var lowStock = inventoryService.search(new InventoryQuery(null, null, null, null, null, null, true, 0, 20));
         var lowItem = byName.items().getFirst();
-        var byCategory = inventoryService.search(new InventoryQuery(lowItem.categoryId(), null, null, null, null,
+        var byCategory = inventoryService.search(new InventoryQuery(lowItem.categoryId(), null, null, null, null, null,
                 false, 0, 20));
-        var byBrand = inventoryService.search(new InventoryQuery(null, lowItem.brandId(), null, null, null,
+        var byBrand = inventoryService.search(new InventoryQuery(null, null, lowItem.brandId(), null, null, null,
                 false, 0, 20));
 
         assertThat(byName.items()).extracting(item -> item.skuId()).containsExactly(low.id());
@@ -251,10 +252,10 @@ class InventoryServiceTest {
     }
 
     private SkuView createSku(String productName, String skuCode, String barcode, int warningStock) {
-        var category = catalogService.createCategory("category-" + UUID.randomUUID());
+        var category = CatalogTestSupport.createCatalog(catalogService, "category-" + UUID.randomUUID());
         var brand = catalogService.createBrand("brand-" + UUID.randomUUID());
-        return catalogService.quickCreate(new QuickCreateSkuCommand(category.id(), brand.id(), null, productName,
-                skuCode, barcode, Map.of("size", "M"), new BigDecimal("99.00"), warningStock));
+        return catalogService.quickCreate(new QuickCreateSkuCommand(category.subCategory().id(), brand.id(), null, productName,
+                skuCode, CatalogTestSupport.barcode(category, barcode), Map.of("size", "M"), new BigDecimal("99.00"), warningStock));
     }
 
     private void setBalance(UUID skuId, int quantity, String averageCost, long version) {

@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.sportshop.catalog.CatalogModels.QuickCreateSkuCommand;
 import com.sportshop.catalog.CatalogModels.SkuView;
 import com.sportshop.catalog.CatalogService;
+import com.sportshop.support.CatalogTestSupport;
 import com.sportshop.inventory.InventoryService;
 import com.sportshop.inventory.adjustment.AdjustmentModels.AdjustStockCommand;
 import com.sportshop.inventory.adjustment.AdjustmentModels.AdjustmentLineInput;
@@ -170,10 +171,10 @@ class AdjustmentServiceTest {
     }
 
     private SkuView createSku(String suffix) {
-        var category = catalogService.createCategory("adjust-category-" + UUID.randomUUID());
+        var category = CatalogTestSupport.createCatalog(catalogService, "adjust-category-" + UUID.randomUUID());
         var brand = catalogService.createBrand("adjust-brand-" + UUID.randomUUID());
-        return catalogService.quickCreate(new QuickCreateSkuCommand(category.id(), brand.id(), null,
-                "adjust-product-" + suffix, "ADJUST-" + UUID.randomUUID(), barcode(), Map.of("size", "M"),
+        return catalogService.quickCreate(new QuickCreateSkuCommand(category.subCategory().id(), brand.id(), null,
+                "adjust-product-" + suffix, "ADJUST-" + UUID.randomUUID(), CatalogTestSupport.barcode(category, barcode()), Map.of("size", "M"),
                 new BigDecimal("99.00"), 0));
     }
 

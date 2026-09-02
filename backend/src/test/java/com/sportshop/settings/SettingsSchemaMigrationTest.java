@@ -90,12 +90,13 @@ class SettingsSchemaMigrationTest {
     }
 
     private void insertSkuFixture() {
-        jdbc.update("INSERT INTO category (id, name, sort_order, enabled, created_at, updated_at) VALUES ('settings-category', '设置分类', 0, 1, ?, ?)", NOW, NOW);
+        jdbc.update("INSERT INTO category (id, code, name, sort_order, enabled, created_at, updated_at) VALUES ('settings-category', '66', '设置分类', 0, 1, ?, ?)", NOW, NOW);
+        jdbc.update("INSERT INTO sub_category (id, category_id, code, name, sort_order, enabled, created_at, updated_at) VALUES ('settings-sub-category', 'settings-category', '01', '设置小类', 0, 1, ?, ?)", NOW, NOW);
         jdbc.update("INSERT INTO brand (id, name, remark, enabled, created_at, updated_at) VALUES ('settings-brand', '设置品牌', NULL, 1, ?, ?)", NOW, NOW);
         jdbc.update("""
                 INSERT INTO product_spu
-                    (id, name, category_id, brand_id, image_url, description, enabled, created_at, updated_at)
-                VALUES ('settings-spu', '设置商品', 'settings-category', 'settings-brand', NULL, NULL, 1, ?, ?)
+                    (id, name, sub_category_id, brand_id, image_url, description, enabled, created_at, updated_at)
+                VALUES ('settings-spu', '设置商品', 'settings-sub-category', 'settings-brand', NULL, NULL, 1, ?, ?)
                 """, NOW, NOW);
         jdbc.update("""
                 INSERT INTO product_sku

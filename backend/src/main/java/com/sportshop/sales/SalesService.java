@@ -180,12 +180,9 @@ public class SalesService {
     private List<PricedSku> price(List<MergedLine> lines) {
         List<PricedSku> priced = new ArrayList<>();
         for (MergedLine line : lines) {
+            catalogService.requireSkuOperational(line.skuId());
             SkuView sku = catalogService.findSku(line.skuId())
                     .orElseThrow(() -> new SalesValidationException("SKU not found"));
-            if (!sku.enabled()) throw new SalesValidationException("Disabled SKU cannot be sold");
-            var product = catalogService.findProduct(sku.spuId())
-                    .orElseThrow(() -> new SalesValidationException("Product not found"));
-            if (!product.enabled()) throw new SalesValidationException("Disabled product cannot be sold");
             priced.add(new PricedSku(sku, line.quantity()));
         }
         return priced;

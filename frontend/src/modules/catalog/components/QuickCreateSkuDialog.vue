@@ -3,27 +3,28 @@ import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { ElDialog } from 'element-plus'
 
 import { errorMessage, quickCreateSku } from '../api'
-import type { Brand, Category, Product, Sku } from '../types'
+import type { Brand, Category, Product, Sku, SubCategory } from '../types'
 import { isNonNegativeInteger, isNonNegativeMoney } from '@/shared/validation/numbers'
 
 const props = defineProps<{
   open: boolean
   barcode: string
   category: Category | null
+  subCategories: SubCategory[]
   brands: Brand[]
   products: Product[]
 }>()
 const emit = defineEmits<{ close: []; created: [sku: Sku, productName: string] }>()
 
-const form = reactive({ existingSpuId: '', productName: '', brandId: '', skuCode: '', specsText: '', retailPrice: '', warningStock: '0' })
+const form = reactive({ subCategoryId: '', existingSpuId: '', productName: '', brandId: '', skuCode: '', specsText: '', retailPrice: '', warningStock: '0' })
 const saving = ref(false)
 const error = ref('')
 const productNameInput = ref<HTMLInputElement>()
-const eligibleProducts = computed(() => props.products.filter((product) => product.categoryId === props.category?.id && product.enabled))
+const eligibleProducts = computed(() => props.products.filter((product) => product.subCategoryId === form.subCategoryId && product.enabled))
 
 watch(() => [props.open, props.barcode], async () => {
   if (!props.open) return
-  Object.assign(form, { existingSpuId: '', productName: '', brandId: props.brands.find((brand) => brand.enabled)?.id ?? '', skuCode: '', specsText: '', retailPrice: '', warningStock: '0' })
+  Object.assign(form, { subCategoryId: props.subCategories.find((item) => item.enabled)?.id ?? '', existingSpuId: '', productName: '', brandId: props.brands.find((brand) => brand.enabled)?.id ?? '', skuCode: '', specsText: '', retailPrice: '', warningStock: '0' })
   error.value = ''
   await nextTick()
   productNameInput.value?.focus()
@@ -55,8 +56,8 @@ async function save() {
   if (saving.value) return
   if (!props.category) return
   error.value = ''
-  if (!form.productName.trim() || !form.skuCode.trim() || !form.brandId || form.retailPrice === '') {
-    error.value = '商品名称、品牌、SKU 编码和零售价为必填项'
+  if (!form.subCategoryId || !form.productName.trim() || !form.skuCode.trim() || !form.brandId || form.retailPrice === '') {
+    error.value = '小类、商品名称、品牌、SKU 编码和零售价为必填项'
     return
   }
   if (!isNonNegativeMoney(form.retailPrice)) {
@@ -70,7 +71,7 @@ async function save() {
   saving.value = true
   try {
     const sku = await quickCreateSku({
-      categoryId: props.category.id,
+      subCategoryId: form.subCategoryId,
       brandId: form.brandId,
       existingSpuId: form.existingSpuId || null,
       productName: form.productName.trim(),
@@ -105,7 +106,8 @@ async function save() {
       <header><div><p class="eyebrow">未知条码</p><h2 id="quick-title">快速建档</h2></div><button data-testid="quick-close" type="button" class="close" aria-label="关闭" @click="$emit('close')">×</button></header>
       <p v-if="error" role="alert" class="alert">{{ error }}</p>
       <div class="grid">
-        <label>商品分类<input data-testid="quick-category" :value="category?.name" disabled></label>
+        <label>所属大类<input data-testid="quick-major-category" :value="category ? `${category.code} ${category.name}` : ''" disabled></label>
+        <label>所属小类<select v-model="form.subCategoryId" data-testid="quick-sub-category" required><option value="">请选择</option><option v-for="item in subCategories.filter((value) => value.enabled)" :key="item.id" :value="item.id" data-testid="quick-sub-category-option">{{ item.code }} {{ item.name }}</option></select></label>
         <label>商品条码<input data-testid="quick-barcode" :value="barcode" disabled></label>
         <label>关联已有商品（可选）
           <select v-model="form.existingSpuId"><option value="">新建商品</option><option v-for="product in eligibleProducts" :key="product.id" :value="product.id">{{ product.name }}</option></select>

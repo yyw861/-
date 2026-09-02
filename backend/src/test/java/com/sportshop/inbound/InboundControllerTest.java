@@ -13,6 +13,7 @@ import com.sportshop.catalog.CatalogModels.QuickCreateSkuCommand;
 import com.sportshop.catalog.CatalogModels.SkuView;
 import com.sportshop.catalog.CatalogService;
 import com.sportshop.support.DatabaseTestSupport;
+import com.sportshop.support.CatalogTestSupport;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -107,7 +108,7 @@ class InboundControllerTest {
     }
 
     @Test
-    void disabledSpuReturnsBadRequestWithoutAnyInboundSideEffects() throws Exception {
+    void disabledSpuReturnsConflictWithoutAnyInboundSideEffects() throws Exception {
         SkuView sku = createSku("http-disabled-spu", "HTTP-IN-DISABLED-SPU", "6900000002110");
         jdbc.sql("UPDATE product_spu SET enabled = 0 WHERE id = :id")
                 .param("id", sku.spuId().toString()).update();
@@ -115,7 +116,7 @@ class InboundControllerTest {
 
         mvc.perform(post("/api/inbounds").header("Idempotency-Key", key)
                         .contentType(MediaType.APPLICATION_JSON).content(body(sku.id(), 1, "10.00")))
-                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.status").value(400));
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.status").value(409));
 
         assertThat(jdbc.sql("SELECT quantity FROM inventory_balance WHERE sku_id = :skuId")
                 .param("skuId", sku.id().toString()).query(Integer.class).single()).isZero();
@@ -215,10 +216,10 @@ class InboundControllerTest {
     }
 
     private SkuView createSku(String productName, String skuCode, String barcode) {
-        var category = catalogService.createCategory("category-" + UUID.randomUUID());
+        var category = CatalogTestSupport.createCatalog(catalogService, "category-" + UUID.randomUUID());
         var brand = catalogService.createBrand("brand-" + UUID.randomUUID());
-        return catalogService.quickCreate(new QuickCreateSkuCommand(category.id(), brand.id(), null, productName,
-                skuCode, barcode, Map.of("size", "M"), new BigDecimal("99.00"), 3));
+        return catalogService.quickCreate(new QuickCreateSkuCommand(category.subCategory().id(), brand.id(), null, productName,
+                skuCode, CatalogTestSupport.barcode(category, barcode), Map.of("size", "M"), new BigDecimal("99.00"), 3));
     }
 
     private static String body(UUID skuId, int quantity, String cost) {

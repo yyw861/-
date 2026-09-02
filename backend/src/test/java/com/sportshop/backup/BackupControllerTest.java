@@ -49,7 +49,7 @@ class BackupControllerTest {
         mvc.perform(get("/api/backups")).andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(id));
         mvc.perform(post("/api/backups/{id}/restore-preview", id))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.schemaVersion").value("4"));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.schemaVersion").value("5"));
         mvc.perform(post("/api/backups/{id}/restore", id).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"confirmationText\":\"错误文本\"}"))
                 .andExpect(status().isBadRequest());

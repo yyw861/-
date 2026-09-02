@@ -6,11 +6,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.sportshop.catalog.CatalogModels.QuickCreateSkuCommand;
 import com.sportshop.catalog.CatalogModels.SkuView;
 import com.sportshop.catalog.CatalogService;
+import com.sportshop.catalog.CatalogStateConflictException;
 import com.sportshop.inbound.InboundModels.ConfirmInboundCommand;
 import com.sportshop.inbound.InboundModels.InboundLineInput;
 import com.sportshop.shared.idempotency.IdempotencyService;
 import com.sportshop.shared.idempotency.IdempotencyService.IdempotencyConflictException;
 import com.sportshop.support.DatabaseTestSupport;
+import com.sportshop.support.CatalogTestSupport;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -155,6 +157,26 @@ class InboundServiceTest {
     }
 
     @Test
+    void disabledMajorCategoryPreventsInbound() {
+        SkuView sku = createSku("disabled-major", "IN-DISABLED-MAJOR", "6900000002010");
+        jdbc.sql("""
+                UPDATE category SET enabled = 0
+                WHERE id = (SELECT minor.category_id FROM product_sku sku
+                    JOIN product_spu product ON product.id = sku.spu_id
+                    JOIN sub_category minor ON minor.id = product.sub_category_id
+                    WHERE sku.id = :skuId)
+                """).param("skuId", sku.id().toString()).update();
+
+        assertThatThrownBy(() -> inboundService.confirm(command(UUID.randomUUID().toString(), List.of(
+                new InboundLineInput(sku.id(), 1, new BigDecimal("10.00"))))))
+                .isInstanceOf(CatalogStateConflictException.class)
+                .hasMessageContaining("disabled");
+
+        assertThat(count("inbound_order")).isZero();
+        assertThat(balance(sku.id()).getFirst()).isEqualTo("0");
+    }
+
+    @Test
     void idempotencyClaimsRequireTheCallerOwnedBusinessTransaction() {
         assertThatThrownBy(() -> idempotencyService.claim(UUID.randomUUID().toString(), "INBOUND",
                 UUID.randomUUID(), "0".repeat(64), "2026-08-05T10:15:30Z"))
@@ -239,10 +261,10 @@ class InboundServiceTest {
     }
 
     private SkuView createSku(String productName, String skuCode, String barcode) {
-        var category = catalogService.createCategory("category-" + UUID.randomUUID());
+        var category = CatalogTestSupport.createCatalog(catalogService, "category-" + UUID.randomUUID());
         var brand = catalogService.createBrand("brand-" + UUID.randomUUID());
-        return catalogService.quickCreate(new QuickCreateSkuCommand(category.id(), brand.id(), null, productName,
-                skuCode, barcode, Map.of("size", "M"), new BigDecimal("99.00"), 3));
+        return catalogService.quickCreate(new QuickCreateSkuCommand(category.subCategory().id(), brand.id(), null, productName,
+                skuCode, CatalogTestSupport.barcode(category, barcode), Map.of("size", "M"), new BigDecimal("99.00"), 3));
     }
 
     private void setBalance(UUID skuId, int quantity, String averageCost) {

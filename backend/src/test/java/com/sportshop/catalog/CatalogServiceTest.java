@@ -12,6 +12,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -21,6 +22,7 @@ import org.springframework.test.context.DynamicPropertySource;
 
 @SpringBootTest
 class CatalogServiceTest {
+    private static final AtomicInteger NEXT_CATEGORY_CODE = new AtomicInteger(20);
     @DynamicPropertySource static void databaseProperties(DynamicPropertyRegistry registry) {
         DatabaseTestSupport.configureDataSource(registry, CatalogServiceTest.class);
     }
@@ -29,8 +31,58 @@ class CatalogServiceTest {
     @Autowired JdbcClient jdbcClient;
 
     @Test
+    void rejectsMajorCodeThatIsNotExactlyTwoDigits() {
+        assertThatThrownBy(() -> catalogService.createCategory("1", "球类"))
+                .isInstanceOf(CatalogValidationException.class);
+        assertThatThrownBy(() -> catalogService.createCategory("A1", "球类"))
+                .isInstanceOf(CatalogValidationException.class);
+    }
+
+    @Test
+    void minorCodeAndNameAreUniqueOnlyWithinTheirMajorCategory() {
+        var ball = catalogService.createCategory("11", "球类");
+        var board = catalogService.createCategory("12", "棋类");
+
+        var ballMinor = catalogService.createSubCategory(ball.id(), "01", "通用");
+        var boardMinor = catalogService.createSubCategory(board.id(), "01", "通用");
+
+        assertThat(ballMinor.categoryId()).isEqualTo(ball.id());
+        assertThat(boardMinor.categoryId()).isEqualTo(board.id());
+        assertThatThrownBy(() -> catalogService.createSubCategory(ball.id(), "01", "足球"))
+                .isInstanceOf(DuplicateCatalogFieldException.class);
+        assertThatThrownBy(() -> catalogService.createSubCategory(ball.id(), "02", "通用"))
+                .isInstanceOf(DuplicateCatalogFieldException.class);
+    }
+
+    @Test
+    void rejectsBarcodeWhosePrefixDoesNotMatchMajorCategory() {
+        var minor = createMinor("前缀测试");
+        var brand = catalogService.createBrand("前缀品牌");
+
+        assertThatThrownBy(() -> catalogService.quickCreate(new QuickCreateSkuCommand(
+                minor.id(), brand.id(), null, "篮球", "PREFIX-1", "9912345", Map.of(),
+                new BigDecimal("10.00"), 1)))
+                .isInstanceOf(CatalogValidationException.class)
+                .hasMessageContaining("prefix");
+    }
+
+    @Test
+    void rejectsChangingMajorCodeAfterSkuExists() {
+        var minor = createMinor("编号锁定测试");
+        var major = catalogService.categories().stream()
+                .filter(value -> value.id().equals(minor.categoryId())).findFirst().orElseThrow();
+        var brand = catalogService.createBrand("编号锁定品牌");
+        catalogService.quickCreate(command(minor.id(), brand.id(), null, "篮球", "LOCK-1",
+                "6900000000901", Map.of()));
+
+        assertThatThrownBy(() -> catalogService.updateCategory(major.id(), "98", major.name(),
+                major.sortOrder(), major.enabled()))
+                .isInstanceOf(CatalogStateConflictException.class);
+    }
+
+    @Test
     void quickCreateCreatesSpuSkuAndZeroInventoryBalance() {
-        var category = catalogService.createCategory("跑鞋");
+        var category = createMinor("跑鞋");
         var brand = catalogService.createBrand("耐克");
         var sku = catalogService.quickCreate(command(category.id(), brand.id(), null, "飞马 41", "NK-PEG-41-42", "6900000000012", Map.of("颜色", "黑色")));
 
@@ -42,7 +94,7 @@ class CatalogServiceTest {
 
     @Test
     void quickCreateReusesExistingSpuAndRejectsDuplicateIdentifiersAndBlankName() {
-        var category = catalogService.createCategory("篮球");
+        var category = createMinor("篮球");
         var brand = catalogService.createBrand("李宁");
         int before = jdbcClient.sql("SELECT COUNT(*) FROM product_spu").query(Integer.class).single();
         var first = catalogService.quickCreate(command(category.id(), brand.id(), null, "音速 12", "LN-YS-12-41", "6900000000101", Map.of("尺码", "41")));
@@ -60,7 +112,7 @@ class CatalogServiceTest {
 
     @Test
     void completeProductEditUpdatesDescriptionImageSkuValuesAndSpecs() {
-        var category = catalogService.createCategory("运动服");
+        var category = createMinor("运动服");
         var brand = catalogService.createBrand("安踏");
         var sku = catalogService.quickCreate(command(category.id(), brand.id(), null, "速干短袖", "ANTA-TEE-M", "6900000000301", Map.of("尺码", "M")));
 
@@ -78,7 +130,7 @@ class CatalogServiceTest {
 
     @Test
     void disablingSkuWithHistoryDoesNotRemoveItFromBarcodeLookup() {
-        var category = catalogService.createCategory("足球");
+        var category = createMinor("足球");
         var brand = catalogService.createBrand("阿迪达斯");
         var sku = catalogService.quickCreate(command(category.id(), brand.id(), null, "训练球", "AD-BALL-5", "6900000000401", Map.of("尺寸", "5号")));
         jdbcClient.sql("INSERT INTO stock_movement (id, movement_type, document_id, document_no, sku_id, quantity_delta, quantity_before, quantity_after, unit_cost, occurred_at) VALUES (:id, 'INBOUND', :documentId, 'IN-1', :skuId, 1, 0, 1, 0.00, :time)")
@@ -91,8 +143,8 @@ class CatalogServiceTest {
 
     @Test
     void createsStandaloneSpuAndRejectsConflictingExistingSpuFields() {
-        var running = catalogService.createCategory("running");
-        var basketball = catalogService.createCategory("basketball");
+        var running = createMinor("running");
+        var basketball = createMinor("basketball");
         var nike = catalogService.createBrand("nike");
         var adidas = catalogService.createBrand("adidas");
         var standalone = catalogService.createProduct(new CreateProductCommand(running.id(), nike.id(), "Pegasus", null, "daily trainer"));
@@ -110,7 +162,7 @@ class CatalogServiceTest {
 
     @Test
     void quickCreateRejectsDisabledExistingSpu() {
-        var category = catalogService.createCategory("disabled-spu-category");
+        var category = createMinor("disabled-spu-category");
         var brand = catalogService.createBrand("disabled-spu-brand");
         var product = catalogService.createProduct(new CreateProductCommand(
                 category.id(), brand.id(), "disabled product", null, null));
@@ -127,16 +179,30 @@ class CatalogServiceTest {
 
     @Test
     void duplicateRenameIsConflictAndUnrepresentablePageIsInvalid() {
-        var first = catalogService.createCategory("unique-first");
-        var second = catalogService.createCategory("unique-second");
+        var first = createMajor("unique-first");
+        var second = createMajor("unique-second");
 
-        assertThatThrownBy(() -> catalogService.updateCategory(second.id(), first.name(), second.sortOrder(), second.enabled()))
+        assertThatThrownBy(() -> catalogService.updateCategory(second.id(), second.code(), first.name(), second.sortOrder(), second.enabled()))
                 .isInstanceOf(DuplicateCatalogFieldException.class);
         assertThatThrownBy(() -> catalogService.products(Integer.MAX_VALUE, 100))
                 .isInstanceOf(CatalogValidationException.class);
     }
 
-    private static QuickCreateSkuCommand command(UUID categoryId, UUID brandId, UUID existingSpuId, String name, String skuCode, String barcode, Map<String, String> specs) {
-        return new QuickCreateSkuCommand(categoryId, brandId, existingSpuId, name, skuCode, barcode, specs, new BigDecimal("99.00"), 3);
+    private CatalogModels.SubCategoryView createMinor(String name) {
+        var major = createMajor(name + "-大类");
+        return catalogService.createSubCategory(major.id(), "01", name);
+    }
+
+    private CatalogModels.CategoryView createMajor(String name) {
+        return catalogService.createCategory(String.format("%02d", NEXT_CATEGORY_CODE.getAndIncrement()), name);
+    }
+
+    private QuickCreateSkuCommand command(UUID subCategoryId, UUID brandId, UUID existingSpuId, String name,
+                                          String skuCode, String barcode, Map<String, String> specs) {
+        String prefix = jdbcClient.sql("SELECT category.code FROM category JOIN sub_category minor ON minor.category_id = category.id WHERE minor.id = :id")
+                .param("id", subCategoryId.toString()).query(String.class).single();
+        String normalizedBarcode = prefix + barcode.substring(2);
+        return new QuickCreateSkuCommand(subCategoryId, brandId, existingSpuId, name, skuCode, normalizedBarcode,
+                specs, new BigDecimal("99.00"), 3);
     }
 }

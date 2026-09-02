@@ -2,15 +2,31 @@ import axios from 'axios'
 
 import { http } from '@/shared/api/http'
 import type {
-  Brand, Category, Page, Product, ProductUpdateRequest, QuickCreateSkuRequest, Sku, SkuUpdateRequest,
+  Brand, Category, Page, Product, ProductUpdateRequest, QuickCreateSkuRequest, Sku, SkuUpdateRequest, SubCategory,
 } from './types'
 
 export async function getCategories(): Promise<Category[]> {
   return (await http.get<Category[]>('/categories')).data
 }
 
-export async function createCategory(name: string): Promise<Category> {
-  return (await http.post<Category>('/categories', { name })).data
+export async function createCategory(code: string, name: string): Promise<Category> {
+  return (await http.post<Category>('/categories', { code, name })).data
+}
+
+export async function getSubCategories(categoryId: string): Promise<SubCategory[]> {
+  return (await http.get<SubCategory[]>(`/categories/${categoryId}/subcategories`)).data
+}
+
+export async function createSubCategory(categoryId: string, code: string, name: string): Promise<SubCategory> {
+  return (await http.post<SubCategory>(`/categories/${categoryId}/subcategories`, { code, name })).data
+}
+
+export async function updateSubCategory(categoryId: string, id: string, patch: Partial<Omit<SubCategory, 'id' | 'categoryId'>>): Promise<SubCategory> {
+  return (await http.patch<SubCategory>(`/categories/${categoryId}/subcategories/${id}`, patch)).data
+}
+
+export async function findCategoryByPrefix(prefix: string): Promise<Category> {
+  return (await http.get<Category>(`/catalog/categories/by-prefix/${encodeURIComponent(prefix)}`)).data
 }
 
 export async function updateCategory(id: string, patch: Partial<Omit<Category, 'id'>>): Promise<Category> {

@@ -7,6 +7,7 @@ import com.sportshop.catalog.CatalogModels.PageView;
 import com.sportshop.catalog.CatalogModels.ProductView;
 import com.sportshop.catalog.CatalogModels.QuickCreateSkuCommand;
 import com.sportshop.catalog.CatalogModels.SkuView;
+import com.sportshop.catalog.CatalogModels.SubCategoryView;
 import com.sportshop.catalog.CatalogModels.UpdateProductCommand;
 import com.sportshop.catalog.CatalogModels.UpdateSkuCommand;
 import java.math.BigDecimal;
@@ -38,10 +39,26 @@ public class CatalogService {
     }
 
     @Transactional
-    public CategoryView createCategory(String name) {
+    public CategoryView createCategory(String code, String name) {
+        String normalizedCode = twoDigitCode(code, "Category code");
         String normalized = required(name, "Category name");
+        if (repository.categoryCodeExists(normalizedCode)) throw new DuplicateCatalogFieldException("Category code already exists");
         if (repository.categoryNameExists(normalized)) throw new DuplicateCatalogFieldException("Category name already exists");
-        return repository.insertCategory(UUID.randomUUID(), normalized, 0, true, now());
+        return repository.insertCategory(UUID.randomUUID(), normalizedCode, normalized, 0, true, now());
+    }
+
+    @Transactional
+    public SubCategoryView createSubCategory(UUID categoryId, String code, String name) {
+        requireCategory(categoryId);
+        String normalizedCode = twoDigitCode(code, "Subcategory code");
+        String normalizedName = required(name, "Subcategory name");
+        if (repository.subCategoryCodeExists(categoryId, normalizedCode, null)) {
+            throw new DuplicateCatalogFieldException("Subcategory code already exists in this category");
+        }
+        if (repository.subCategoryNameExists(categoryId, normalizedName, null)) {
+            throw new DuplicateCatalogFieldException("Subcategory name already exists in this category");
+        }
+        return repository.insertSubCategory(UUID.randomUUID(), categoryId, normalizedCode, normalizedName, 0, true, now());
     }
 
     @Transactional
@@ -55,10 +72,10 @@ public class CatalogService {
     public ProductView createProduct(CreateProductCommand command) {
         if (command == null) throw new CatalogValidationException("Request body is required");
         String name = required(command.productName(), "Product name");
-        requireCategory(command.categoryId());
+        requireSubCategory(command.subCategoryId());
         requireBrand(command.brandId());
         UUID id = UUID.randomUUID();
-        repository.insertSpu(id, name, command.categoryId(), command.brandId(), nullableTrim(command.imageUrl()),
+        repository.insertSpu(id, name, command.subCategoryId(), command.brandId(), nullableTrim(command.imageUrl()),
                 nullableTrim(command.description()), now());
         return findProduct(id).orElseThrow();
     }
@@ -66,14 +83,16 @@ public class CatalogService {
     @Transactional
     public SkuView quickCreate(QuickCreateSkuCommand command) {
         validateQuickCreate(command);
-        if (repository.barcodeExists(command.barcode().trim(), null)) throw new DuplicateCatalogFieldException("Barcode already exists");
+        String barcode = numericBarcode(command.barcode());
+        validateBarcodePrefix(command.subCategoryId(), barcode);
+        if (repository.barcodeExists(barcode, null)) throw new DuplicateCatalogFieldException("Barcode already exists");
         if (repository.skuCodeExists(command.skuCode().trim(), null)) throw new DuplicateCatalogFieldException("SKU code already exists");
         UUID spuId = command.existingSpuId();
         if (spuId == null) {
-            requireCategory(command.categoryId());
+            requireSubCategory(command.subCategoryId());
             requireBrand(command.brandId());
             spuId = UUID.randomUUID();
-            repository.insertSpu(spuId, command.productName().trim(), command.categoryId(), command.brandId(), now());
+            repository.insertSpu(spuId, command.productName().trim(), command.subCategoryId(), command.brandId(), now());
         }
         else {
             CatalogRepository.ProductRow product = repository.findProduct(spuId)
@@ -81,8 +100,8 @@ public class CatalogService {
             if (!product.enabled()) {
                 throw new CatalogValidationException("Disabled product cannot accept new SKUs");
             }
-            if (!product.categoryId().equals(command.categoryId())) {
-                throw new CatalogValidationException("Existing product category does not match");
+            if (!product.subCategoryId().equals(command.subCategoryId())) {
+                throw new CatalogValidationException("Existing product subcategory does not match");
             }
             if (!product.brandId().equals(command.brandId())) {
                 throw new CatalogValidationException("Existing product brand does not match");
@@ -93,7 +112,7 @@ public class CatalogService {
         }
         UUID skuId = UUID.randomUUID();
         String timestamp = now();
-        repository.insertSku(skuId, spuId, command.skuCode().trim(), command.barcode().trim(), price(command.retailPrice()),
+        repository.insertSku(skuId, spuId, command.skuCode().trim(), barcode, price(command.retailPrice()),
                 warningStock(command.warningStock()), timestamp);
         repository.replaceSpecs(skuId, cleanSpecs(command.specs()));
         repository.insertBalance(skuId, timestamp);
@@ -104,10 +123,17 @@ public class CatalogService {
     public ProductView updateProduct(UpdateProductCommand command) {
         if (command == null || command.productId() == null) throw new CatalogValidationException("Product id is required");
         required(command.productName(), "Product name");
-        requireCategory(command.categoryId());
+        SubCategoryView targetSubCategory = requireSubCategory(command.subCategoryId());
         requireBrand(command.brandId());
-        if (!repository.spuExists(command.productId())) throw new CatalogNotFoundException("Product not found");
-        repository.updateSpu(command.productId(), command.productName().trim(), command.categoryId(), command.brandId(),
+        CatalogRepository.ProductRow existingProduct = repository.findProduct(command.productId())
+                .orElseThrow(() -> new CatalogNotFoundException("Product not found"));
+        CategoryView targetCategory = category(targetSubCategory.categoryId());
+        for (SkuView sku : repository.findSkusBySpu(command.productId())) {
+            if (!sku.barcode().startsWith(targetCategory.code())) {
+                throw new CatalogValidationException("Barcode prefix does not match target category");
+            }
+        }
+        repository.updateSpu(command.productId(), command.productName().trim(), command.subCategoryId(), command.brandId(),
                 nullableTrim(command.imageUrl()), nullableTrim(command.description()), command.enabled(), now());
         if (command.skus() != null) for (UpdateSkuCommand sku : command.skus()) updateSkuForProduct(command.productId(), sku);
         return findProduct(command.productId()).orElseThrow();
@@ -115,10 +141,22 @@ public class CatalogService {
 
     public Optional<SkuView> findByBarcode(String barcode) {
         if (barcode == null || barcode.isBlank()) return Optional.empty();
-        return repository.findSkuByBarcode(barcode.trim());
+        return repository.findSkuByBarcode(numericBarcode(barcode));
     }
 
     public Optional<SkuView> findSku(UUID skuId) { return skuId == null ? Optional.empty() : repository.findSku(skuId); }
+
+    public void requireSkuOperational(UUID skuId) {
+        if (skuId == null) throw new CatalogNotFoundException("SKU not found");
+        CatalogRepository.CatalogChainRow chain = repository.findCatalogChainBySku(skuId)
+                .orElseThrow(() -> new CatalogNotFoundException("SKU not found"));
+        if (!chain.skuEnabled() || !chain.productEnabled() || !chain.subCategoryEnabled() || !chain.categoryEnabled()) {
+            throw new CatalogStateConflictException("SKU catalog chain is disabled");
+        }
+        if (!chain.barcode().startsWith(chain.categoryCode())) {
+            throw new CatalogStateConflictException("Barcode prefix does not match category code");
+        }
+    }
 
     @Transactional
     public void setSkuEnabled(UUID skuId, boolean enabled) {
@@ -128,15 +166,45 @@ public class CatalogService {
 
     public List<CategoryView> categories() { return repository.findCategories(); }
 
+    public List<SubCategoryView> subCategories(UUID categoryId) {
+        requireCategory(categoryId);
+        return repository.findSubCategories(categoryId);
+    }
+
+    public Optional<CategoryView> findCategoryByPrefix(String prefix) {
+        return repository.findCategoryByCode(twoDigitCode(prefix, "Barcode prefix"));
+    }
+
     public List<BrandView> brands() { return repository.findBrands(); }
 
     @Transactional
-    public CategoryView updateCategory(UUID id, String name, int sortOrder, boolean enabled) {
+    public CategoryView updateCategory(UUID id, String code, String name, int sortOrder, boolean enabled) {
         if (id == null || !repository.categoryExists(id)) throw new CatalogNotFoundException("Category not found");
+        String normalizedCode = twoDigitCode(code, "Category code");
         String normalized = required(name, "Category name");
+        CategoryView existing = category(id);
+        if (!existing.code().equals(normalizedCode) && repository.categoryHasSkus(id)) {
+            throw new CatalogStateConflictException("Category code cannot change after SKUs exist");
+        }
+        if (repository.categoryCodeExistsExcept(normalizedCode, id)) throw new DuplicateCatalogFieldException("Category code already exists");
         if (repository.categoryNameExistsExcept(normalized, id)) throw new DuplicateCatalogFieldException("Category name already exists");
-        repository.updateCategory(id, normalized, sortOrder, enabled, now());
+        repository.updateCategory(id, normalizedCode, normalized, sortOrder, enabled, now());
         return repository.findCategories().stream().filter(category -> category.id().equals(id)).findFirst().orElseThrow();
+    }
+
+    @Transactional
+    public SubCategoryView updateSubCategory(UUID categoryId, UUID id, String code, String name, int sortOrder,
+                                             boolean enabled) {
+        requireCategory(categoryId);
+        SubCategoryView existing = repository.findSubCategory(id)
+                .orElseThrow(() -> new CatalogNotFoundException("Subcategory not found"));
+        if (!existing.categoryId().equals(categoryId)) throw new CatalogNotFoundException("Subcategory not found");
+        String normalizedCode = twoDigitCode(code, "Subcategory code");
+        String normalizedName = required(name, "Subcategory name");
+        if (repository.subCategoryCodeExists(categoryId, normalizedCode, id)) throw new DuplicateCatalogFieldException("Subcategory code already exists in this category");
+        if (repository.subCategoryNameExists(categoryId, normalizedName, id)) throw new DuplicateCatalogFieldException("Subcategory name already exists in this category");
+        repository.updateSubCategory(id, normalizedCode, normalizedName, sortOrder, enabled, now());
+        return repository.findSubCategory(id).orElseThrow();
     }
 
     @Transactional
@@ -177,7 +245,10 @@ public class CatalogService {
         SkuView existing = repository.findSku(command.skuId()).orElseThrow(() -> new CatalogNotFoundException("SKU not found"));
         if (!existing.spuId().equals(expectedSpuId)) throw new CatalogValidationException("SKU does not belong to product");
         String skuCode = required(command.skuCode(), "SKU code");
-        String barcode = required(command.barcode(), "Barcode");
+        String barcode = numericBarcode(command.barcode());
+        CatalogRepository.ProductRow product = repository.findProduct(expectedSpuId)
+                .orElseThrow(() -> new CatalogNotFoundException("Product not found"));
+        validateBarcodePrefix(product.subCategoryId(), barcode);
         if (repository.skuCodeExists(skuCode, command.skuId())) throw new DuplicateCatalogFieldException("SKU code already exists");
         if (repository.barcodeExists(barcode, command.skuId())) throw new DuplicateCatalogFieldException("Barcode already exists");
         repository.updateSku(command.skuId(), skuCode, barcode, price(command.retailPrice()), warningStock(command.warningStock()),
@@ -186,14 +257,14 @@ public class CatalogService {
     }
 
     private ProductView productView(CatalogRepository.ProductRow row) {
-        return new ProductView(row.id(), row.name(), row.categoryId(), row.brandId(), row.imageUrl(), row.description(),
+        return new ProductView(row.id(), row.name(), row.categoryId(), row.subCategoryId(), row.brandId(), row.imageUrl(), row.description(),
                 row.enabled(), repository.findSkusBySpu(row.id()));
     }
 
     private List<ProductView> productViews(List<CatalogRepository.ProductRow> rows) {
         Map<UUID, List<SkuView>> skus = repository.findSkusBySpuIds(rows.stream().map(CatalogRepository.ProductRow::id).toList())
                 .stream().collect(java.util.stream.Collectors.groupingBy(SkuView::spuId));
-        return rows.stream().map(row -> new ProductView(row.id(), row.name(), row.categoryId(), row.brandId(), row.imageUrl(),
+        return rows.stream().map(row -> new ProductView(row.id(), row.name(), row.categoryId(), row.subCategoryId(), row.brandId(), row.imageUrl(),
                 row.description(), row.enabled(), skus.getOrDefault(row.id(), List.of()))).toList();
     }
 
@@ -201,7 +272,7 @@ public class CatalogService {
         if (command == null) throw new CatalogValidationException("Request body is required");
         required(command.productName(), "Product name");
         required(command.skuCode(), "SKU code");
-        required(command.barcode(), "Barcode");
+        numericBarcode(command.barcode());
         price(command.retailPrice());
         warningStock(command.warningStock());
         cleanSpecs(command.specs());
@@ -211,6 +282,25 @@ public class CatalogService {
         if (categoryId == null || !repository.categoryExists(categoryId)) throw new CatalogNotFoundException("Category not found");
     }
 
+    private SubCategoryView requireSubCategory(UUID subCategoryId) {
+        if (subCategoryId == null) throw new CatalogNotFoundException("Subcategory not found");
+        return repository.findSubCategory(subCategoryId)
+                .orElseThrow(() -> new CatalogNotFoundException("Subcategory not found"));
+    }
+
+    private CategoryView category(UUID categoryId) {
+        return repository.findCategories().stream().filter(value -> value.id().equals(categoryId)).findFirst()
+                .orElseThrow(() -> new CatalogNotFoundException("Category not found"));
+    }
+
+    private void validateBarcodePrefix(UUID subCategoryId, String barcode) {
+        SubCategoryView subCategory = requireSubCategory(subCategoryId);
+        CategoryView category = category(subCategory.categoryId());
+        if (!barcode.startsWith(category.code())) {
+            throw new CatalogValidationException("Barcode prefix must match category code");
+        }
+    }
+
     private void requireBrand(UUID brandId) {
         if (brandId == null || !repository.brandExists(brandId)) throw new CatalogNotFoundException("Brand not found");
     }
@@ -218,6 +308,18 @@ public class CatalogService {
     private static String required(String value, String field) {
         if (value == null || value.isBlank()) throw new CatalogValidationException(field + " is required");
         return value.trim();
+    }
+
+    private static String twoDigitCode(String value, String field) {
+        String normalized = required(value, field);
+        if (!normalized.matches("\\d{2}")) throw new CatalogValidationException(field + " must contain exactly two digits");
+        return normalized;
+    }
+
+    private static String numericBarcode(String value) {
+        String normalized = required(value, "Barcode");
+        if (!normalized.matches("\\d{3,}")) throw new CatalogValidationException("Barcode must contain at least three digits");
+        return normalized;
     }
 
     private static String nullableTrim(String value) { return value == null ? null : value.trim(); }

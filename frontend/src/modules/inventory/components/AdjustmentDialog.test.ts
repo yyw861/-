@@ -11,7 +11,7 @@ vi.mock('../../catalog/api', () => ({
 
 const item = {
   skuId: 'sku-1', productId: 'spu-1', productName: '训练篮球', categoryId: 'category-1',
-  categoryName: '球类用品', brandId: 'brand-1', brandName: '测试品牌', skuCode: 'BALL-01',
+  categoryCode: '69', categoryName: '球类用品', subCategoryId: 'sub-1', subCategoryCode: '01', subCategoryName: '篮球', brandId: 'brand-1', brandName: '测试品牌', skuCode: 'BALL-01',
   barcode: '6900000000012', retailPrice: 159, warningStock: 3, enabled: true, quantity: 10,
   averageCost: 100, inventoryValue: 1000, version: 1, updatedAt: '2026-08-24T08:00:00Z',
 }

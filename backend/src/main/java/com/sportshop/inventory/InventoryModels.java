@@ -20,12 +20,14 @@ public final class InventoryModels {
     public record InventorySnapshot(UUID skuId, int quantity, BigDecimal averageCost, long version) {
     }
 
-    public record InventoryQuery(UUID categoryId, UUID brandId, String name, String skuCode, String barcode,
+    public record InventoryQuery(UUID categoryId, UUID subCategoryId, UUID brandId, String name, String skuCode, String barcode,
                                  boolean lowStock, int page, int size) {
     }
 
     public record InventoryItem(UUID skuId, UUID productId, String productName, UUID categoryId,
-                                String categoryName, UUID brandId, String brandName, String skuCode,
+                                String categoryCode, String categoryName, UUID subCategoryId,
+                                String subCategoryCode, String subCategoryName,
+                                UUID brandId, String brandName, String skuCode,
                                 String barcode, BigDecimal retailPrice, int warningStock, boolean enabled,
                                 int quantity, BigDecimal averageCost, BigDecimal inventoryValue, long version,
                                 String updatedAt) {

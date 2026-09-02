@@ -1,6 +1,6 @@
 import type { InventoryItem } from './types'
 
-const headings = ['商品名称', 'SKU编码', '条码', '分类', '品牌', '库存数量', '预警库存', '平均成本', '库存金额']
+const headings = ['商品名称', 'SKU编码', '条码', '大类编号', '大类名称', '小类编号', '小类名称', '品牌', '库存数量', '预警库存', '平均成本', '库存金额']
 
 function cell(value: string | number) {
   const text = String(value)
@@ -14,7 +14,8 @@ function textCell(value: string) {
 
 export function inventoryCsv(items: InventoryItem[]) {
   const rows = items.map(item => [textCell(item.productName), textCell(item.skuCode),
-    textCell(`'${item.barcode}`), textCell(item.categoryName), textCell(item.brandName),
+    textCell(`'${item.barcode}`), textCell(item.categoryCode), textCell(item.categoryName),
+    textCell(item.subCategoryCode), textCell(item.subCategoryName), textCell(item.brandName),
     cell(item.quantity), cell(item.warningStock), cell(Number(item.averageCost).toFixed(4)),
     cell(Number(item.inventoryValue).toFixed(4))].join(','))
   return `\uFEFF${headings.join(',')}\r\n${rows.join('\r\n')}`

@@ -88,6 +88,12 @@ class ReportServiceTest {
         assertThat(shares).extracting(item -> item.categoryName()).containsExactly("鞋类", "球类");
         assertThat(shares).extracting(item -> item.netSalesAmount())
                 .containsExactly(new BigDecimal("200.00"), new BigDecimal("90.00"));
+        var ballMinorShares = service.categoryShare(AUGUST_24,
+                java.util.UUID.fromString("10000000-0000-0000-0000-000000000001"));
+        assertThat(ballMinorShares).singleElement().satisfies(item -> {
+            assertThat(item.subCategoryName()).isEqualTo("篮球");
+            assertThat(item.netSalesAmount()).isEqualByComparingTo("90.00");
+        });
     }
 
     @Test
@@ -161,13 +167,15 @@ class ReportServiceTest {
     }
 
     private void insertCatalogAndBalances() {
-        jdbc.update("INSERT OR IGNORE INTO category (id,name,sort_order,enabled,created_at,updated_at) VALUES ('10000000-0000-0000-0000-000000000001','球类',0,1,'2026-08-01T00:00:00Z','2026-08-01T00:00:00Z')");
-        jdbc.update("INSERT OR IGNORE INTO category (id,name,sort_order,enabled,created_at,updated_at) VALUES ('10000000-0000-0000-0000-000000000002','鞋类',0,1,'2026-08-01T00:00:00Z','2026-08-01T00:00:00Z')");
+        jdbc.update("INSERT OR IGNORE INTO category (id,code,name,sort_order,enabled,created_at,updated_at) VALUES ('10000000-0000-0000-0000-000000000001','66','球类',0,1,'2026-08-01T00:00:00Z','2026-08-01T00:00:00Z')");
+        jdbc.update("INSERT OR IGNORE INTO category (id,code,name,sort_order,enabled,created_at,updated_at) VALUES ('10000000-0000-0000-0000-000000000002','67','鞋类',0,1,'2026-08-01T00:00:00Z','2026-08-01T00:00:00Z')");
+        jdbc.update("INSERT OR IGNORE INTO sub_category (id,category_id,code,name,sort_order,enabled,created_at,updated_at) VALUES ('11000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','01','篮球',0,1,'2026-08-01T00:00:00Z','2026-08-01T00:00:00Z')");
+        jdbc.update("INSERT OR IGNORE INTO sub_category (id,category_id,code,name,sort_order,enabled,created_at,updated_at) VALUES ('11000000-0000-0000-0000-000000000002','10000000-0000-0000-0000-000000000002','01','跑鞋',0,1,'2026-08-01T00:00:00Z','2026-08-01T00:00:00Z')");
         jdbc.update("INSERT OR IGNORE INTO brand (id,name,enabled,created_at,updated_at) VALUES ('report-brand','报表品牌',1,'2026-08-01T00:00:00Z','2026-08-01T00:00:00Z')");
-        jdbc.update("INSERT OR IGNORE INTO product_spu (id,name,category_id,brand_id,enabled,created_at,updated_at) VALUES ('report-spu-a','训练篮球','10000000-0000-0000-0000-000000000001','report-brand',1,'2026-08-01T00:00:00Z','2026-08-01T00:00:00Z')");
-        jdbc.update("INSERT OR IGNORE INTO product_spu (id,name,category_id,brand_id,enabled,created_at,updated_at) VALUES ('report-spu-b','跑步鞋','10000000-0000-0000-0000-000000000002','report-brand',1,'2026-08-01T00:00:00Z','2026-08-01T00:00:00Z')");
+        jdbc.update("INSERT OR IGNORE INTO product_spu (id,name,sub_category_id,brand_id,enabled,created_at,updated_at) VALUES ('report-spu-a','训练篮球','11000000-0000-0000-0000-000000000001','report-brand',1,'2026-08-01T00:00:00Z','2026-08-01T00:00:00Z')");
+        jdbc.update("INSERT OR IGNORE INTO product_spu (id,name,sub_category_id,brand_id,enabled,created_at,updated_at) VALUES ('report-spu-b','跑步鞋','11000000-0000-0000-0000-000000000002','report-brand',1,'2026-08-01T00:00:00Z','2026-08-01T00:00:00Z')");
         jdbc.update("INSERT OR IGNORE INTO product_sku (id,spu_id,sku_code,barcode,retail_price,warning_stock,enabled,created_at,updated_at) VALUES (?, 'report-spu-a','REPORT-A','6610000000001',100.00,1,1,'2026-08-01T00:00:00Z','2026-08-01T00:00:00Z')", SKU_A);
-        jdbc.update("INSERT OR IGNORE INTO product_sku (id,spu_id,sku_code,barcode,retail_price,warning_stock,enabled,created_at,updated_at) VALUES (?, 'report-spu-b','REPORT-B','6610000000002',220.00,1,1,'2026-08-01T00:00:00Z','2026-08-01T00:00:00Z')", SKU_B);
+        jdbc.update("INSERT OR IGNORE INTO product_sku (id,spu_id,sku_code,barcode,retail_price,warning_stock,enabled,created_at,updated_at) VALUES (?, 'report-spu-b','REPORT-B','6710000000002',220.00,1,1,'2026-08-01T00:00:00Z','2026-08-01T00:00:00Z')", SKU_B);
         jdbc.update("INSERT OR REPLACE INTO inventory_balance (sku_id,quantity,average_cost,version,updated_at) VALUES (?,1,50.0000,0,'2026-08-24T05:00:00Z')", SKU_A);
         jdbc.update("INSERT OR REPLACE INTO inventory_balance (sku_id,quantity,average_cost,version,updated_at) VALUES (?,2,120.0000,0,'2026-08-24T05:00:00Z')", SKU_B);
     }

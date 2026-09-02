@@ -22,7 +22,7 @@ describe('InventoryView', () => {
     inventoryApi.getInventory.mockReset().mockResolvedValue({
       items: [{
         skuId: 'sku-1', productId: 'spu-1', productName: '训练篮球', categoryId: 'category-1',
-        categoryName: '球类用品', brandId: 'brand-1', brandName: '测试品牌', skuCode: 'BALL-01',
+        categoryCode: '69', categoryName: '球类用品', subCategoryId: 'sub-1', subCategoryCode: '01', subCategoryName: '篮球', brandId: 'brand-1', brandName: '测试品牌', skuCode: 'BALL-01',
         barcode: '6900000000012', retailPrice: 159, warningStock: 0, enabled: true, quantity: 10,
         averageCost: 100, inventoryValue: 1000, version: 1, updatedAt: '2026-08-04T16:30:00Z',
       }],
@@ -51,7 +51,7 @@ describe('InventoryView', () => {
       items: [{
         skuId: page === 0 ? 'sku-1' : 'sku-51', productId: 'spu-1',
         productName: page === 0 ? '第一页商品' : '第51件商品', categoryId: 'category-1',
-        categoryName: '球类用品', brandId: 'brand-1', brandName: '测试品牌',
+        categoryCode: '69', categoryName: '球类用品', subCategoryId: 'sub-1', subCategoryCode: '01', subCategoryName: '篮球', brandId: 'brand-1', brandName: '测试品牌',
         skuCode: page === 0 ? 'BALL-01' : 'BALL-51', barcode: page === 0 ? '6900000000012' : '6900000000051',
         retailPrice: 159, warningStock: 0, enabled: true, quantity: 10,
         averageCost: 100, inventoryValue: 1000, version: 1, updatedAt: '2026-08-04T16:30:00Z',
@@ -105,7 +105,7 @@ describe('InventoryView', () => {
       const count = size === 100 ? (page === 0 ? 100 : 1) : 1
       return Promise.resolve({ items: Array.from({ length: count }, (_, index) => ({
         skuId: `sku-${page}-${index}`, productId: 'spu-1', productName: '训练篮球', categoryId: 'category-1',
-        categoryName: '球类用品', brandId: 'brand-1', brandName: '测试品牌', skuCode: `BALL-${index}`,
+        categoryCode: '69', categoryName: '球类用品', subCategoryId: 'sub-1', subCategoryCode: '01', subCategoryName: '篮球', brandId: 'brand-1', brandName: '测试品牌', skuCode: `BALL-${index}`,
         barcode: `6900${index}`, retailPrice: 159, warningStock: 3, enabled: true, quantity: 2,
         averageCost: 100, inventoryValue: 200, version: 1, updatedAt: '2026-08-24T08:00:00Z',
       })), total: 101, page, size })

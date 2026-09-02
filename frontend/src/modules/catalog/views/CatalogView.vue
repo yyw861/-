@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 
 import {
-  createBrand, createCategory, createProduct, errorMessage, getBrands, getCategories, getProducts,
-  quickCreateSku, updateBrand, updateCategory, updateProduct,
+  createBrand, createCategory, createProduct, createSubCategory, errorMessage, getBrands, getCategories, getProducts,
+  getSubCategories, quickCreateSku, updateBrand, updateCategory, updateProduct, updateSubCategory,
 } from '../api'
-import type { Brand, Category, Product, Sku } from '../types'
+import type { Brand, Category, Product, Sku, SubCategory } from '../types'
 import { isJavaInteger, isNonNegativeInteger, isNonNegativeMoney } from '@/shared/validation/numbers'
 
 interface EditableSku extends Omit<Sku, 'specs' | 'retailPrice' | 'warningStock'> {
@@ -15,23 +15,27 @@ interface EditableSku extends Omit<Sku, 'specs' | 'retailPrice' | 'warningStock'
 }
 
 const categories = ref<Category[]>([])
+const subCategories = ref<SubCategory[]>([])
 const brands = ref<Brand[]>([])
 const products = ref<Product[]>([])
 const loading = ref(true)
 const saving = ref(false)
 const alert = ref('')
 const notice = ref('')
-const newCategoryName = ref('')
+const newCategory = reactive({ code: '', name: '' })
+const newSubCategory = reactive({ categoryId: '', code: '', name: '' })
 const newBrandName = ref('')
-const newProduct = reactive({ productName: '', categoryId: '', brandId: '', imageUrl: '', description: '' })
+const newProduct = reactive({ productName: '', categoryId: '', subCategoryId: '', brandId: '', imageUrl: '', description: '' })
 const editingId = ref('')
 const editCloseButton = ref<HTMLButtonElement>()
 const editTrigger = ref<HTMLElement | null>(null)
-const editProduct = reactive({ productName: '', categoryId: '', brandId: '', imageUrl: '', description: '', enabled: true, skus: [] as EditableSku[] })
+const editProduct = reactive({ productName: '', categoryId: '', subCategoryId: '', brandId: '', imageUrl: '', description: '', enabled: true, skus: [] as EditableSku[] })
 const originalProduct = ref<Product | null>(null)
 const addingSku = ref(false)
 const creatingSku = ref(false)
 const newSku = reactive({ skuCode: '', barcode: '', specsText: '', retailPrice: '', warningStock: '0', enabled: true })
+const newProductSubCategories = computed(() => subCategories.value.filter((item) => item.categoryId === newProduct.categoryId && item.enabled))
+const editSubCategories = computed(() => subCategories.value.filter((item) => item.categoryId === editProduct.categoryId))
 
 onMounted(load)
 
@@ -41,6 +45,7 @@ async function load() {
   try {
     const [categoryData, brandData, productItems] = await Promise.all([getCategories(), getBrands(), loadAllProducts()])
     categories.value = categoryData
+    subCategories.value = (await Promise.all(categoryData.map((category) => getSubCategories(category.id)))).flat()
     brands.value = brandData
     products.value = productItems
   } catch (cause) { alert.value = errorMessage(cause) }
@@ -59,10 +64,28 @@ async function loadAllProducts(): Promise<Product[]> {
 }
 
 async function addCategory() {
-  if (!newCategoryName.value.trim()) return
+  if (!newCategory.code.trim() || !newCategory.name.trim()) return
   try {
-    categories.value.push(await createCategory(newCategoryName.value.trim()))
-    newCategoryName.value = ''
+    categories.value.push(await createCategory(newCategory.code.trim(), newCategory.name.trim()))
+    Object.assign(newCategory, { code: '', name: '' })
+  } catch (cause) { alert.value = errorMessage(cause) }
+}
+
+async function addSubCategory() {
+  if (!newSubCategory.categoryId || !newSubCategory.code.trim() || !newSubCategory.name.trim()) return
+  try {
+    subCategories.value.push(await createSubCategory(newSubCategory.categoryId, newSubCategory.code.trim(), newSubCategory.name.trim()))
+    Object.assign(newSubCategory, { code: '', name: '' })
+  } catch (cause) { alert.value = errorMessage(cause) }
+}
+
+async function saveSubCategory(item: SubCategory) {
+  if (!isJavaInteger(item.sortOrder)) { alert.value = '小类排序必须是 Java int 范围内的整数'; return }
+  try {
+    Object.assign(item, await updateSubCategory(item.categoryId, item.id, {
+      code: item.code.trim(), name: item.name.trim(), sortOrder: Number(item.sortOrder), enabled: item.enabled,
+    }))
+    notice.value = '小类已保存'
   } catch (cause) { alert.value = errorMessage(cause) }
 }
 
@@ -78,7 +101,7 @@ async function saveCategory(category: Category) {
   }
   try {
     Object.assign(category, await updateCategory(category.id, {
-      name: category.name.trim(), sortOrder: Number(category.sortOrder), enabled: category.enabled,
+      code: category.code.trim(), name: category.name.trim(), sortOrder: Number(category.sortOrder), enabled: category.enabled,
     }))
     notice.value = '分类已保存'
   } catch (cause) { alert.value = errorMessage(cause) }
@@ -107,19 +130,19 @@ async function saveBrand(brand: Brand) {
 }
 
 async function addProduct() {
-  if (!newProduct.productName.trim() || !newProduct.categoryId || !newProduct.brandId) {
-    alert.value = '商品名称、分类和品牌为必填项'
+  if (!newProduct.productName.trim() || !newProduct.subCategoryId || !newProduct.brandId) {
+    alert.value = '商品名称、小类和品牌为必填项'
     return
   }
   try {
     const created = await createProduct({
-      ...newProduct,
+      subCategoryId: newProduct.subCategoryId, brandId: newProduct.brandId,
       productName: newProduct.productName.trim(),
       imageUrl: newProduct.imageUrl.trim() || null,
       description: newProduct.description.trim() || null,
     })
     products.value.unshift(created)
-    Object.assign(newProduct, { productName: '', categoryId: '', brandId: '', imageUrl: '', description: '' })
+    Object.assign(newProduct, { productName: '', categoryId: '', subCategoryId: '', brandId: '', imageUrl: '', description: '' })
     notice.value = '商品创建成功，可在扫码入库快速建档时新增 SKU。'
   } catch (cause) { alert.value = errorMessage(cause) }
 }
@@ -133,6 +156,7 @@ async function beginEdit(product: Product, event?: MouseEvent) {
   Object.assign(editProduct, {
     productName: product.name,
     categoryId: product.categoryId,
+    subCategoryId: product.subCategoryId,
     brandId: product.brandId,
     imageUrl: product.imageUrl ?? '',
     description: product.description ?? '',
@@ -178,7 +202,7 @@ async function createNewSku() {
     const product = originalProduct.value
     const created = await quickCreateSku({
       existingSpuId: product.id,
-      categoryId: product.categoryId,
+      subCategoryId: product.subCategoryId,
       brandId: product.brandId,
       productName: product.name,
       skuCode: newSku.skuCode.trim(),
@@ -210,8 +234,8 @@ async function saveProduct() {
   if (saving.value) return
   if (!editingId.value) return
   alert.value = ''
-  if (!editProduct.productName.trim() || !editProduct.categoryId || !editProduct.brandId) {
-    alert.value = '商品名称、分类和品牌为必填项'
+  if (!editProduct.productName.trim() || !editProduct.subCategoryId || !editProduct.brandId) {
+    alert.value = '商品名称、小类和品牌为必填项'
     return
   }
   for (const sku of editProduct.skus) {
@@ -232,7 +256,7 @@ async function saveProduct() {
   try {
     await updateProduct(editingId.value, {
       productName: editProduct.productName.trim(),
-      categoryId: editProduct.categoryId,
+      subCategoryId: editProduct.subCategoryId,
       brandId: editProduct.brandId,
       imageUrl: editProduct.imageUrl.trim() || null,
       description: editProduct.description.trim() || null,
@@ -255,6 +279,7 @@ async function saveProduct() {
 }
 
 function categoryName(id: string) { return categories.value.find((item) => item.id === id)?.name ?? '—' }
+function subCategoryName(id: string) { return subCategories.value.find((item) => item.id === id)?.name ?? '—' }
 function brandName(id: string) { return brands.value.find((item) => item.id === id)?.name ?? '—' }
 function specsText(specs: Record<string, string>) { return Object.entries(specs).map(([name, value]) => `${name}：${value}`).join(' / ') || '无规格' }
 function formatSpecsForEdit(specs: Record<string, string>) { return Object.entries(specs).map(([name, value]) => `${name}:${value}`).join(',') }
@@ -275,13 +300,22 @@ function parseSpecs(text: string) {
 
     <div class="dictionary-grid">
       <section class="card" aria-labelledby="categories-title">
-        <h2 id="categories-title">分类管理</h2>
-        <form class="inline-form" @submit.prevent="addCategory"><label>分类名称<input v-model="newCategoryName" required></label><button type="submit">新增分类</button></form>
+        <h2 id="categories-title">大类管理</h2>
+        <form class="inline-form" @submit.prevent="addCategory"><label>两位编号<input v-model="newCategory.code" maxlength="2" required></label><label>大类名称<input v-model="newCategory.name" required></label><button type="submit">新增大类</button></form>
         <ul><li v-for="category in categories" :key="category.id" class="dictionary-row">
-          <label>分类名称<input v-model="category.name" :data-testid="`category-name-${category.id}`"></label>
+          <label>大类编号<input v-model="category.code" :data-testid="`category-code-${category.id}`" maxlength="2"></label>
+          <label>大类名称<input v-model="category.name" :data-testid="`category-name-${category.id}`"></label>
           <label>排序<input v-model.number="category.sortOrder" :data-testid="`category-sort-${category.id}`" type="number" step="1"></label>
           <button :data-testid="`save-category-${category.id}`" type="button" class="secondary" @click="saveCategory(category)">保存</button>
           <button type="button" class="link" @click="toggleCategory(category)">{{ category.enabled ? '停用' : '启用' }}</button>
+        </li></ul>
+        <h3>小类管理</h3>
+        <form class="inline-form" @submit.prevent="addSubCategory"><label>所属大类<select v-model="newSubCategory.categoryId" required><option value="">请选择</option><option v-for="category in categories" :key="category.id" :value="category.id">{{ category.code }} {{ category.name }}</option></select></label><label>两位编号<input v-model="newSubCategory.code" maxlength="2" required></label><label>小类名称<input v-model="newSubCategory.name" required></label><button type="submit">新增小类</button></form>
+        <ul><li v-for="item in subCategories" :key="item.id" class="dictionary-row minor-row">
+          <span>{{ categories.find((category) => category.id === item.categoryId)?.name }}</span>
+          <label>小类编号<input v-model="item.code" :data-testid="`subcategory-code-${item.id}`" maxlength="2"></label>
+          <label>小类名称<input v-model="item.name" :data-testid="`subcategory-name-${item.id}`"></label>
+          <button :data-testid="`save-subcategory-${item.id}`" type="button" class="secondary" @click="saveSubCategory(item)">保存</button>
         </li></ul>
       </section>
       <section class="card" aria-labelledby="brands-title">
@@ -300,7 +334,8 @@ function parseSpecs(text: string) {
       <h2 id="new-product-title">新建商品</h2>
       <form class="product-form" @submit.prevent="addProduct">
         <label>商品名称<input v-model="newProduct.productName" required></label>
-        <label>商品分类<select v-model="newProduct.categoryId" required><option value="">请选择</option><option v-for="category in categories.filter((item) => item.enabled)" :key="category.id" :value="category.id">{{ category.name }}</option></select></label>
+        <label>所属大类<select v-model="newProduct.categoryId" required @change="newProduct.subCategoryId = ''"><option value="">请选择</option><option v-for="category in categories.filter((item) => item.enabled)" :key="category.id" :value="category.id">{{ category.code }} {{ category.name }}</option></select></label>
+        <label>所属小类<select v-model="newProduct.subCategoryId" required><option value="">请选择</option><option v-for="item in newProductSubCategories" :key="item.id" :value="item.id">{{ item.code }} {{ item.name }}</option></select></label>
         <label>品牌<select v-model="newProduct.brandId" required><option value="">请选择</option><option v-for="brand in brands.filter((item) => item.enabled)" :key="brand.id" :value="brand.id">{{ brand.name }}</option></select></label>
         <label>图片 URL<input v-model="newProduct.imageUrl" type="url"></label>
         <label class="wide">商品描述<textarea v-model="newProduct.description" rows="2"></textarea></label>
@@ -316,7 +351,7 @@ function parseSpecs(text: string) {
           <div class="product-summary">
             <img v-if="product.imageUrl" :src="product.imageUrl" :alt="`${product.name} 商品图`">
             <div class="image-placeholder" v-else>暂无图片</div>
-            <div><h3>{{ product.name }}</h3><p>{{ categoryName(product.categoryId) }} · {{ brandName(product.brandId) }}</p><p>{{ product.description || '暂无描述' }}</p><span class="tag">启用状态：{{ product.enabled ? '启用' : '停用' }}</span></div>
+            <div><h3>{{ product.name }}</h3><p>{{ categoryName(product.categoryId) }} / {{ subCategoryName(product.subCategoryId) }} · {{ brandName(product.brandId) }}</p><p>{{ product.description || '暂无描述' }}</p><span class="tag">启用状态：{{ product.enabled ? '启用' : '停用' }}</span></div>
             <button :data-testid="`edit-product-${product.id}`" type="button" class="secondary" @click="beginEdit(product, $event)">编辑资料</button>
           </div>
           <table><thead><tr><th>SKU 编码</th><th>条码</th><th>规格</th><th>零售价</th><th>库存预警值</th><th>启用状态</th></tr></thead>
@@ -331,7 +366,8 @@ function parseSpecs(text: string) {
         <header class="section-heading"><h2 id="edit-title">编辑商品资料</h2><button ref="editCloseButton" data-testid="edit-product-close" type="button" class="close" aria-label="关闭" @click="closeEdit">×</button></header>
         <div class="product-form">
           <label>商品名称<input v-model="editProduct.productName" required></label>
-          <label>商品分类<select v-model="editProduct.categoryId" required><option v-for="category in categories" :key="category.id" :value="category.id">{{ category.name }}</option></select></label>
+          <label>所属大类<select v-model="editProduct.categoryId" required @change="editProduct.subCategoryId = ''"><option v-for="category in categories" :key="category.id" :value="category.id">{{ category.code }} {{ category.name }}</option></select></label>
+          <label>所属小类<select v-model="editProduct.subCategoryId" required><option v-for="item in editSubCategories" :key="item.id" :value="item.id">{{ item.code }} {{ item.name }}</option></select></label>
           <label>品牌<select v-model="editProduct.brandId" required><option v-for="brand in brands" :key="brand.id" :value="brand.id">{{ brand.name }}</option></select></label>
           <label>图片 URL<input v-model="editProduct.imageUrl" data-testid="product-image-url" type="url"></label>
           <label class="wide">商品描述<textarea v-model="editProduct.description" data-testid="product-description" rows="2"></textarea></label>

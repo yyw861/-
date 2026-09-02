@@ -13,6 +13,7 @@ import com.sportshop.catalog.CatalogModels.QuickCreateSkuCommand;
 import com.sportshop.catalog.CatalogModels.SkuView;
 import com.sportshop.catalog.CatalogService;
 import com.sportshop.support.DatabaseTestSupport;
+import com.sportshop.support.CatalogTestSupport;
 import java.math.BigDecimal;
 import java.util.Map;
 import java.util.UUID;
@@ -111,8 +112,7 @@ class SalesControllerTest {
         String id = json(created, "$.id");
         String orderNo = json(created, "$.orderNo");
 
-        mvc.perform(get("/api/sales").param("fromDate", "2026-08-01").param("toDate", "2026-08-31")
-                        .param("orderNo", orderNo).param("page", "0").param("size", "10"))
+        mvc.perform(get("/api/sales").param("orderNo", orderNo).param("page", "0").param("size", "10"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(1))
                 .andExpect(jsonPath("$.items[0].id").value(id));
         mvc.perform(get("/api/sales/{id}", id)).andExpect(status().isOk())
@@ -131,10 +131,10 @@ class SalesControllerTest {
     }
 
     private SkuView stockedSku(String name, String code, String barcode, int quantity, String cost) {
-        var category = catalogService.createCategory("category-" + UUID.randomUUID());
+        var category = CatalogTestSupport.createCatalog(catalogService, "category-" + UUID.randomUUID());
         var brand = catalogService.createBrand("brand-" + UUID.randomUUID());
-        SkuView sku = catalogService.quickCreate(new QuickCreateSkuCommand(category.id(), brand.id(), null, name,
-                code, barcode, Map.of("size", "M"), new BigDecimal("99.00"), 3));
+        SkuView sku = catalogService.quickCreate(new QuickCreateSkuCommand(category.subCategory().id(), brand.id(), null, name,
+                code, CatalogTestSupport.barcode(category, barcode), Map.of("size", "M"), new BigDecimal("99.00"), 3));
         jdbc.sql("UPDATE inventory_balance SET quantity = :quantity, average_cost = :cost WHERE sku_id = :skuId")
                 .param("quantity", quantity).param("cost", new BigDecimal(cost)).param("skuId", sku.id().toString()).update();
         return sku;

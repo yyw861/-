@@ -68,14 +68,21 @@ public class ReportService {
         Bounds bounds = bounds(validate(range));
         return repository.productRanking(bounds.from(), bounds.toExclusive(), limit).stream()
                 .map(item -> new ProductRanking(item.skuId(), item.skuCode(), item.barcode(), item.productName(),
+                        item.categoryCode(), item.categoryName(), item.subCategoryCode(), item.subCategoryName(),
                         item.grossQuantity(), item.returnedQuantity(), item.netQuantity(),
                         money(item.netSalesAmount()))).toList();
     }
 
     public List<CategoryShare> categoryShare(DateRange range) {
+        return categoryShare(range, null);
+    }
+
+    public List<CategoryShare> categoryShare(DateRange range, java.util.UUID categoryId) {
         Bounds bounds = bounds(validate(range));
-        return repository.categoryShare(bounds.from(), bounds.toExclusive()).stream()
-                .map(item -> new CategoryShare(item.categoryId(), item.categoryName(), money(item.netSalesAmount())))
+        return repository.categoryShare(bounds.from(), bounds.toExclusive(), categoryId).stream()
+                .map(item -> new CategoryShare(item.categoryId(), item.categoryCode(), item.categoryName(),
+                        item.subCategoryId(), item.subCategoryCode(), item.subCategoryName(),
+                        money(item.netSalesAmount())))
                 .toList();
     }
 

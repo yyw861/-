@@ -138,14 +138,14 @@ function signedQuantity(value: number) {
       </div>
       <p v-if="loading">正在加载…</p>
       <div v-else class="table-wrap">
-        <table><thead><tr><th>商品</th><th>SKU 编码</th><th>条码</th><th>分类 / 品牌</th><th>数量</th><th>平均成本</th><th>库存金额</th><th>操作</th></tr></thead>
+        <table><thead><tr><th>商品</th><th>SKU 编码</th><th>条码</th><th>大类</th><th>小类</th><th>品牌</th><th>数量</th><th>平均成本</th><th>库存金额</th><th>操作</th></tr></thead>
           <tbody>
             <tr v-for="item in items" :key="item.skuId">
-              <td>{{ item.productName }}</td><td>{{ item.skuCode }}</td><td>{{ item.barcode }}</td><td>{{ item.categoryName }} / {{ item.brandName }}</td>
+              <td>{{ item.productName }}</td><td>{{ item.skuCode }}</td><td>{{ item.barcode }}</td><td>{{ item.categoryCode }} {{ item.categoryName }}</td><td>{{ item.subCategoryCode }} {{ item.subCategoryName }}</td><td>{{ item.brandName }}</td>
               <td>{{ item.quantity }}</td><td>{{ Number(item.averageCost).toFixed(4) }}</td><td>¥{{ Number(item.inventoryValue).toFixed(2) }}</td>
               <td><div class="row-actions"><button type="button" class="link" @click="showMovements(item)">查看流水</button><button type="button" class="link" :data-testid="`open-adjustment-${item.skuId}`" @click="adjusting = item">库存调整</button></div></td>
             </tr>
-            <tr v-if="items.length === 0"><td colspan="8" class="empty">暂无库存记录</td></tr>
+            <tr v-if="items.length === 0"><td colspan="10" class="empty">暂无库存记录</td></tr>
           </tbody>
         </table>
       </div>
