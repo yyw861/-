@@ -178,7 +178,7 @@ git commit -m "feat: add major and minor catalog APIs"
 - Produces: 库存项目带 `categoryCode/categoryName/subCategoryCode/subCategoryName`。
 - Produces: `GET /api/reports/category-share` 默认大类汇总并支持 `categoryId` 下钻小类。
 
-- [ ] **Step 1: 写禁止待确认分类交易和报表分组失败测试**
+- [x] **Step 1: 写禁止待确认分类交易和报表分组失败测试**
 
 ```java
 @Test void rejectsInboundWhenMajorCategoryIsDisabled() { /* 停用大类后提交入库返回冲突 */ }
@@ -186,13 +186,13 @@ git commit -m "feat: add major and minor catalog APIs"
 @Test void categoryShareAggregatesByMajorAndDrillsIntoMinor() { /* 两个小类汇总与下钻 */ }
 ```
 
-- [ ] **Step 2: 运行入库、销售和报表测试并确认失败**
+- [x] **Step 2: 运行入库、销售和报表测试并确认失败**
 
 Run: `mvn -q -Dtest=InboundServiceTest,SalesServiceTest,ReportServiceTest test`
 
 Expected: FAIL，现有服务未校验两级分类或仍按旧分类联结。
 
-- [ ] **Step 3: 改造入库、销售、库存与报表查询**
+- [x] **Step 3: 改造入库、销售、库存与报表查询**
 
 ```java
 public record CategoryShare(UUID categoryId, String categoryCode, String categoryName,
@@ -202,13 +202,13 @@ public record CategoryShare(UUID categoryId, String categoryCode, String categor
 
 默认汇总时小类字段为 `null`；传入大类 ID 时按该大类的小类分组。所有新交易先调用目录服务检查 SKU、SPU、小类、大类启用状态、确认状态和条码前缀。
 
-- [ ] **Step 4: 运行后端完整测试**
+- [x] **Step 4: 运行后端完整测试**
 
 Run: `mvn -q test`
 
 Expected: PASS。
 
-- [ ] **Step 5: 提交业务适配**
+- [x] **Step 5: 提交业务适配**
 
 ```bash
 git add backend/src/main backend/src/test

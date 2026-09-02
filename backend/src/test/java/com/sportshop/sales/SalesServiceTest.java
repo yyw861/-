@@ -3,6 +3,7 @@ package com.sportshop.sales;
 import com.sportshop.catalog.CatalogModels.QuickCreateSkuCommand;
 import com.sportshop.catalog.CatalogModels.SkuView;
 import com.sportshop.catalog.CatalogService;
+import com.sportshop.catalog.CatalogStateConflictException;
 import com.sportshop.support.CatalogTestSupport;
 import com.sportshop.sales.SalesModels.CheckoutCommand;
 import com.sportshop.sales.SalesModels.PaymentInput;
@@ -163,6 +164,26 @@ class SalesServiceTest {
         assertThatThrownBy(() -> salesService.checkout(command(requestId, "0.00",
                 List.of(new SaleLineInput(sku.id(), 2)), "80.00")))
                 .isInstanceOf(IdempotencyConflictException.class);
+        assertThat(balance(sku.id()).getFirst()).isEqualTo("2");
+    }
+
+    @Test
+    void disabledMinorCategoryPreventsCheckout() {
+        SkuView sku = createSku("disabled-minor", "40.00");
+        setBalance(sku.id(), 2, "25.0000");
+        jdbc.sql("""
+                UPDATE sub_category SET enabled = 0
+                WHERE id = (SELECT product.sub_category_id FROM product_sku sku
+                    JOIN product_spu product ON product.id = sku.spu_id
+                    WHERE sku.id = :skuId)
+                """).param("skuId", sku.id().toString()).update();
+
+        assertThatThrownBy(() -> salesService.checkout(command(UUID.randomUUID().toString(), "0.00",
+                List.of(new SaleLineInput(sku.id(), 1)), "40.00")))
+                .isInstanceOf(CatalogStateConflictException.class)
+                .hasMessageContaining("disabled");
+
+        assertThat(count("sale_order")).isZero();
         assertThat(balance(sku.id()).getFirst()).isEqualTo("2");
     }
 

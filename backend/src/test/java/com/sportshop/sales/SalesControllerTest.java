@@ -112,8 +112,7 @@ class SalesControllerTest {
         String id = json(created, "$.id");
         String orderNo = json(created, "$.orderNo");
 
-        mvc.perform(get("/api/sales").param("fromDate", "2026-08-01").param("toDate", "2026-08-31")
-                        .param("orderNo", orderNo).param("page", "0").param("size", "10"))
+        mvc.perform(get("/api/sales").param("orderNo", orderNo).param("page", "0").param("size", "10"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(1))
                 .andExpect(jsonPath("$.items[0].id").value(id));
         mvc.perform(get("/api/sales/{id}", id)).andExpect(status().isOk())

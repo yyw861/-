@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.sportshop.catalog.CatalogModels.QuickCreateSkuCommand;
 import com.sportshop.catalog.CatalogModels.SkuView;
 import com.sportshop.catalog.CatalogService;
+import com.sportshop.catalog.CatalogStateConflictException;
 import com.sportshop.inbound.InboundModels.ConfirmInboundCommand;
 import com.sportshop.inbound.InboundModels.InboundLineInput;
 import com.sportshop.shared.idempotency.IdempotencyService;
@@ -153,6 +154,26 @@ class InboundServiceTest {
         assertThat(countBy("inbound_order", "id", receipt.id().toString())).isOne();
         assertThat(countBy("stock_movement", "document_id", receipt.id().toString())).isOne();
         assertThat(balance(sku.id()).getFirst()).isEqualTo("2");
+    }
+
+    @Test
+    void disabledMajorCategoryPreventsInbound() {
+        SkuView sku = createSku("disabled-major", "IN-DISABLED-MAJOR", "6900000002010");
+        jdbc.sql("""
+                UPDATE category SET enabled = 0
+                WHERE id = (SELECT minor.category_id FROM product_sku sku
+                    JOIN product_spu product ON product.id = sku.spu_id
+                    JOIN sub_category minor ON minor.id = product.sub_category_id
+                    WHERE sku.id = :skuId)
+                """).param("skuId", sku.id().toString()).update();
+
+        assertThatThrownBy(() -> inboundService.confirm(command(UUID.randomUUID().toString(), List.of(
+                new InboundLineInput(sku.id(), 1, new BigDecimal("10.00"))))))
+                .isInstanceOf(CatalogStateConflictException.class)
+                .hasMessageContaining("disabled");
+
+        assertThat(count("inbound_order")).isZero();
+        assertThat(balance(sku.id()).getFirst()).isEqualTo("0");
     }
 
     @Test

@@ -122,11 +122,12 @@ class SalesSchemaMigrationTest {
 
     private void insertCatalogFixture() {
         String timestamp = "2026-08-13T00:00:00Z";
-        jdbcTemplate.update("INSERT INTO category VALUES ('category-1', 'category', 0, 1, ?, ?)", timestamp, timestamp);
+        jdbcTemplate.update("INSERT INTO category VALUES ('category-1', '69', 'category', 0, 1, ?, ?)", timestamp, timestamp);
+        jdbcTemplate.update("INSERT INTO sub_category VALUES ('sub-category-1', 'category-1', '01', 'subcategory', 0, 1, ?, ?)", timestamp, timestamp);
         jdbcTemplate.update("INSERT INTO brand VALUES ('brand-1', 'brand', NULL, 1, ?, ?)", timestamp, timestamp);
         jdbcTemplate.update("""
                 INSERT INTO product_spu VALUES
-                    ('spu-1', 'product', 'category-1', 'brand-1', NULL, NULL, 1, ?, ?)
+                    ('spu-1', 'product', 'sub-category-1', 'brand-1', NULL, NULL, 1, ?, ?)
                 """, timestamp, timestamp);
         jdbcTemplate.update("""
                 INSERT INTO product_sku VALUES

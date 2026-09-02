@@ -108,7 +108,7 @@ class InboundControllerTest {
     }
 
     @Test
-    void disabledSpuReturnsBadRequestWithoutAnyInboundSideEffects() throws Exception {
+    void disabledSpuReturnsConflictWithoutAnyInboundSideEffects() throws Exception {
         SkuView sku = createSku("http-disabled-spu", "HTTP-IN-DISABLED-SPU", "6900000002110");
         jdbc.sql("UPDATE product_spu SET enabled = 0 WHERE id = :id")
                 .param("id", sku.spuId().toString()).update();
@@ -116,7 +116,7 @@ class InboundControllerTest {
 
         mvc.perform(post("/api/inbounds").header("Idempotency-Key", key)
                         .contentType(MediaType.APPLICATION_JSON).content(body(sku.id(), 1, "10.00")))
-                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.status").value(400));
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.status").value(409));
 
         assertThat(jdbc.sql("SELECT quantity FROM inventory_balance WHERE sku_id = :skuId")
                 .param("skuId", sku.id().toString()).query(Integer.class).single()).isZero();

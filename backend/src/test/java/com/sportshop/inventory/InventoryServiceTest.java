@@ -231,14 +231,14 @@ class InventoryServiceTest {
         setBalance(low.id(), 5, "12.3456", 0);
         setBalance(enough.id(), 9, "20.0000", 0);
 
-        var byName = inventoryService.search(new InventoryQuery(null, null, "running", null, null, false, 0, 20));
-        var bySku = inventoryService.search(new InventoryQuery(null, null, null, "RUN-LOW", null, false, 0, 20));
-        var byBarcode = inventoryService.search(new InventoryQuery(null, null, null, null, low.barcode(), false, 0, 20));
-        var lowStock = inventoryService.search(new InventoryQuery(null, null, null, null, null, true, 0, 20));
+        var byName = inventoryService.search(new InventoryQuery(null, null, null, "running", null, null, false, 0, 20));
+        var bySku = inventoryService.search(new InventoryQuery(null, null, null, null, "RUN-LOW", null, false, 0, 20));
+        var byBarcode = inventoryService.search(new InventoryQuery(null, null, null, null, null, low.barcode(), false, 0, 20));
+        var lowStock = inventoryService.search(new InventoryQuery(null, null, null, null, null, null, true, 0, 20));
         var lowItem = byName.items().getFirst();
-        var byCategory = inventoryService.search(new InventoryQuery(lowItem.categoryId(), null, null, null, null,
+        var byCategory = inventoryService.search(new InventoryQuery(lowItem.categoryId(), null, null, null, null, null,
                 false, 0, 20));
-        var byBrand = inventoryService.search(new InventoryQuery(null, lowItem.brandId(), null, null, null,
+        var byBrand = inventoryService.search(new InventoryQuery(null, null, lowItem.brandId(), null, null, null,
                 false, 0, 20));
 
         assertThat(byName.items()).extracting(item -> item.skuId()).containsExactly(low.id());

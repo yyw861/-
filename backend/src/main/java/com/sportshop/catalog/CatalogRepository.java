@@ -261,6 +261,22 @@ class CatalogRepository {
                 .param("categoryId", categoryId.toString()).query(Long.class).single() > 0;
     }
 
+    Optional<CatalogChainRow> findCatalogChainBySku(UUID skuId) {
+        return jdbc.sql("""
+                SELECT sku.barcode, sku.enabled AS sku_enabled, product.enabled AS product_enabled,
+                       minor.enabled AS sub_category_enabled, category.enabled AS category_enabled,
+                       category.code AS category_code
+                  FROM product_sku sku
+                  JOIN product_spu product ON product.id = sku.spu_id
+                  JOIN sub_category minor ON minor.id = product.sub_category_id
+                  JOIN category category ON category.id = minor.category_id
+                 WHERE sku.id = :skuId
+                """).param("skuId", skuId.toString()).query((rs, row) -> new CatalogChainRow(
+                rs.getString("barcode"), rs.getInt("sku_enabled") == 1,
+                rs.getInt("product_enabled") == 1, rs.getInt("sub_category_enabled") == 1,
+                rs.getInt("category_enabled") == 1, rs.getString("category_code"))).optional();
+    }
+
     void updateBrand(UUID id, String name, String remark, boolean enabled, String now) {
         jdbc.sql("UPDATE brand SET name = :name, remark = :remark, enabled = :enabled, updated_at = :now WHERE id = :id").param("id", id.toString()).param("name", name).param("remark", remark)
                 .param("enabled", bool(enabled)).param("now", now).update();
@@ -312,4 +328,6 @@ class CatalogRepository {
     }
     record SkuRow(UUID id, UUID spuId, String skuCode, String barcode, BigDecimal retailPrice, int warningStock, boolean enabled) {}
     record SpecRow(UUID skuId, String name, String value) {}
+    record CatalogChainRow(String barcode, boolean skuEnabled, boolean productEnabled,
+                           boolean subCategoryEnabled, boolean categoryEnabled, String categoryCode) {}
 }

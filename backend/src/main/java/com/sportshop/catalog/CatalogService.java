@@ -146,6 +146,18 @@ public class CatalogService {
 
     public Optional<SkuView> findSku(UUID skuId) { return skuId == null ? Optional.empty() : repository.findSku(skuId); }
 
+    public void requireSkuOperational(UUID skuId) {
+        if (skuId == null) throw new CatalogNotFoundException("SKU not found");
+        CatalogRepository.CatalogChainRow chain = repository.findCatalogChainBySku(skuId)
+                .orElseThrow(() -> new CatalogNotFoundException("SKU not found"));
+        if (!chain.skuEnabled() || !chain.productEnabled() || !chain.subCategoryEnabled() || !chain.categoryEnabled()) {
+            throw new CatalogStateConflictException("SKU catalog chain is disabled");
+        }
+        if (!chain.barcode().startsWith(chain.categoryCode())) {
+            throw new CatalogStateConflictException("Barcode prefix does not match category code");
+        }
+    }
+
     @Transactional
     public void setSkuEnabled(UUID skuId, boolean enabled) {
         if (skuId == null || repository.findSku(skuId).isEmpty()) throw new CatalogNotFoundException("SKU not found");
@@ -342,8 +354,4 @@ class DuplicateCatalogFieldException extends RuntimeException {
 
 class CatalogNotFoundException extends RuntimeException {
     CatalogNotFoundException(String message) { super(message); }
-}
-
-class CatalogStateConflictException extends RuntimeException {
-    CatalogStateConflictException(String message) { super(message); }
 }

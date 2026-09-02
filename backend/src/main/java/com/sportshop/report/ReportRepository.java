@@ -80,6 +80,8 @@ class ReportRepository {
     List<ProductRanking> productRanking(String from, String to, int limit) {
         return jdbc.sql("""
                 SELECT sku.id AS sku_id, sku.sku_code, sku.barcode, product.name AS product_name,
+                       category.code AS category_code, category.name AS category_name,
+                       minor.code AS sub_category_code, minor.name AS sub_category_name,
                        SUM(data.gross_quantity) AS gross_quantity,
                        SUM(data.returned_quantity) AS returned_quantity,
                        SUM(data.net_quantity) AS net_quantity, SUM(data.net_sales) AS net_sales
@@ -94,18 +96,28 @@ class ReportRepository {
                      WHERE ret.occurred_at >= :from AND ret.occurred_at < :to
                   ) data JOIN product_sku sku ON sku.id = data.sku_id
                          JOIN product_spu product ON product.id = sku.spu_id
-                 GROUP BY sku.id, sku.sku_code, sku.barcode, product.name
+                         JOIN sub_category minor ON minor.id = product.sub_category_id
+                         JOIN category category ON category.id = minor.category_id
+                 GROUP BY sku.id, sku.sku_code, sku.barcode, product.name,
+                          category.code, category.name, minor.code, minor.name
                  ORDER BY net_quantity DESC, sku.id ASC LIMIT :limit
                 """).param("from", from).param("to", to).param("limit", limit)
                 .query((rs, n) -> new ProductRanking(uuid(rs, "sku_id"), rs.getString("sku_code"),
-                        rs.getString("barcode"), rs.getString("product_name"), rs.getLong("gross_quantity"),
+                        rs.getString("barcode"), rs.getString("product_name"), rs.getString("category_code"),
+                        rs.getString("category_name"), rs.getString("sub_category_code"),
+                        rs.getString("sub_category_name"), rs.getLong("gross_quantity"),
                         rs.getLong("returned_quantity"), rs.getLong("net_quantity"),
                         rs.getBigDecimal("net_sales"))).list();
     }
 
-    List<CategoryShare> categoryShare(String from, String to) {
-        return jdbc.sql("""
-                SELECT category.id AS category_id, category.name AS category_name,
+    List<CategoryShare> categoryShare(String from, String to, UUID categoryId) {
+        String grouping = categoryId == null
+                ? "GROUP BY category.id, category.code, category.name ORDER BY net_sales DESC, category.id ASC"
+                : "WHERE category.id = :categoryId GROUP BY category.id, category.code, category.name, minor.id, minor.code, minor.name ORDER BY net_sales DESC, minor.id ASC";
+        String sql = """
+                SELECT category.id AS category_id, category.code AS category_code,
+                       category.name AS category_name,
+                       %s AS sub_category_id, %s AS sub_category_code, %s AS sub_category_name,
                        SUM(data.net_sales) AS net_sales
                   FROM (
                     SELECT line.sku_id, line.actual_amount AS net_sales
@@ -117,11 +129,18 @@ class ReportRepository {
                      WHERE ret.occurred_at >= :from AND ret.occurred_at < :to
                   ) data JOIN product_sku sku ON sku.id = data.sku_id
                          JOIN product_spu product ON product.id = sku.spu_id
-                         JOIN category category ON category.id = product.category_id
-                 GROUP BY category.id, category.name
-                 ORDER BY net_sales DESC, category.id ASC
-                """).param("from", from).param("to", to).query((rs, n) -> new CategoryShare(
-                uuid(rs, "category_id"), rs.getString("category_name"), rs.getBigDecimal("net_sales"))).list();
+                         JOIN sub_category minor ON minor.id = product.sub_category_id
+                         JOIN category category ON category.id = minor.category_id
+                 %s
+                """.formatted(categoryId == null ? "NULL" : "minor.id",
+                categoryId == null ? "NULL" : "minor.code",
+                categoryId == null ? "NULL" : "minor.name", grouping);
+        JdbcClient.StatementSpec statement = jdbc.sql(sql).param("from", from).param("to", to);
+        if (categoryId != null) statement.param("categoryId", categoryId.toString());
+        return statement.query((rs, n) -> new CategoryShare(
+                uuid(rs, "category_id"), rs.getString("category_code"), rs.getString("category_name"),
+                nullableUuid(rs, "sub_category_id"), rs.getString("sub_category_code"),
+                rs.getString("sub_category_name"), rs.getBigDecimal("net_sales"))).list();
     }
 
     InboundSummary inbound(String from, String to) {
@@ -144,13 +163,19 @@ class ReportRepository {
     List<LowStockItem> lowStock() {
         return jdbc.sql("""
                 SELECT sku.id AS sku_id, sku.sku_code, sku.barcode, product.name AS product_name,
+                       category.code AS category_code, category.name AS category_name,
+                       minor.code AS sub_category_code, minor.name AS sub_category_name,
                        balance.quantity, sku.warning_stock
                   FROM inventory_balance balance JOIN product_sku sku ON sku.id = balance.sku_id
                        JOIN product_spu product ON product.id = sku.spu_id
+                       JOIN sub_category minor ON minor.id = product.sub_category_id
+                       JOIN category category ON category.id = minor.category_id
                  WHERE balance.quantity <= sku.warning_stock AND sku.enabled = 1 AND product.enabled = 1
                  ORDER BY balance.quantity - sku.warning_stock ASC, sku.id ASC
                 """).query((rs, n) -> new LowStockItem(uuid(rs, "sku_id"), rs.getString("sku_code"),
-                rs.getString("barcode"), rs.getString("product_name"), rs.getInt("quantity"),
+                rs.getString("barcode"), rs.getString("product_name"), rs.getString("category_code"),
+                rs.getString("category_name"), rs.getString("sub_category_code"),
+                rs.getString("sub_category_name"), rs.getInt("quantity"),
                 rs.getInt("warning_stock"))).list();
     }
 
@@ -170,6 +195,11 @@ class ReportRepository {
 
     private static UUID uuid(ResultSet rs, String column) throws SQLException {
         return UUID.fromString(rs.getString(column));
+    }
+
+    private static UUID nullableUuid(ResultSet rs, String column) throws SQLException {
+        String value = rs.getString(column);
+        return value == null ? null : UUID.fromString(value);
     }
 
     record SalesOrderTotals(long orderCount, BigDecimal grossSales) {}

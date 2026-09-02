@@ -10,6 +10,7 @@ import com.sportshop.report.ReportModels.ProductRanking;
 import com.sportshop.report.ReportModels.SalesSummary;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -45,8 +46,9 @@ public class ReportController {
     }
 
     @GetMapping("/api/reports/categories")
-    List<CategoryShare> categories(@RequestParam LocalDate fromDate, @RequestParam LocalDate toDate) {
-        return service.categoryShare(new DateRange(fromDate, toDate));
+    List<CategoryShare> categories(@RequestParam LocalDate fromDate, @RequestParam LocalDate toDate,
+                                   @RequestParam(required = false) UUID categoryId) {
+        return service.categoryShare(new DateRange(fromDate, toDate), categoryId);
     }
 
     @GetMapping("/api/reports/inbound")

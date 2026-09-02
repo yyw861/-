@@ -22,7 +22,8 @@ class InventoryRepository {
             FROM inventory_balance balance
             JOIN product_sku sku ON sku.id = balance.sku_id
             JOIN product_spu product ON product.id = sku.spu_id
-            JOIN category category ON category.id = product.category_id
+            JOIN sub_category minor ON minor.id = product.sub_category_id
+            JOIN category category ON category.id = minor.category_id
             JOIN brand brand ON brand.id = product.brand_id
             """;
 
@@ -121,7 +122,9 @@ class InventoryRepository {
         String sql = """
                 SELECT balance.sku_id, balance.quantity, balance.average_cost, balance.version, balance.updated_at,
                        sku.spu_id, sku.sku_code, sku.barcode, sku.retail_price, sku.warning_stock, sku.enabled,
-                       product.name AS product_name, product.category_id, product.brand_id,
+                       product.name AS product_name, minor.category_id, category.code AS category_code,
+                       product.sub_category_id, minor.code AS sub_category_code,
+                       minor.name AS sub_category_name, product.brand_id,
                        category.name AS category_name, brand.name AS brand_name
                 """ + INVENTORY_FROM + filter.where()
                 + " ORDER BY product.name COLLATE NOCASE, sku.sku_code COLLATE NOCASE, sku.id LIMIT :limit OFFSET :offset";
@@ -141,8 +144,12 @@ class InventoryRepository {
         List<String> conditions = new ArrayList<>();
         Map<String, Object> parameters = new HashMap<>();
         if (query.categoryId() != null) {
-            conditions.add("product.category_id = :categoryId");
+            conditions.add("minor.category_id = :categoryId");
             parameters.put("categoryId", query.categoryId().toString());
+        }
+        if (query.subCategoryId() != null) {
+            conditions.add("product.sub_category_id = :subCategoryId");
+            parameters.put("subCategoryId", query.subCategoryId().toString());
         }
         if (query.brandId() != null) {
             conditions.add("product.brand_id = :brandId");
@@ -182,7 +189,9 @@ class InventoryRepository {
         BigDecimal averageCost = rs.getBigDecimal("average_cost").setScale(4);
         int quantity = rs.getInt("quantity");
         return new InventoryItem(uuid(rs, "sku_id"), uuid(rs, "spu_id"), rs.getString("product_name"),
-                uuid(rs, "category_id"), rs.getString("category_name"), uuid(rs, "brand_id"),
+                uuid(rs, "category_id"), rs.getString("category_code"), rs.getString("category_name"),
+                uuid(rs, "sub_category_id"), rs.getString("sub_category_code"), rs.getString("sub_category_name"),
+                uuid(rs, "brand_id"),
                 rs.getString("brand_name"), rs.getString("sku_code"), rs.getString("barcode"),
                 rs.getBigDecimal("retail_price"), rs.getInt("warning_stock"), rs.getInt("enabled") == 1,
                 quantity, averageCost, averageCost.multiply(BigDecimal.valueOf(quantity)).setScale(4),

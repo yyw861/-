@@ -6,13 +6,13 @@ import com.sportshop.catalog.CatalogService;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class CatalogTestSupport {
-    private static final AtomicInteger NEXT_CODE = new AtomicInteger(40);
+    private static final AtomicInteger NEXT_CODE = new AtomicInteger();
 
     private CatalogTestSupport() {
     }
 
     public static CatalogFixture createCatalog(CatalogService service, String name) {
-        String code = String.format("%02d", NEXT_CODE.getAndIncrement());
+        String code = String.format("%02d", 10 + Math.floorMod(NEXT_CODE.getAndIncrement(), 80));
         CategoryView category = service.createCategory(code, name + "-大类");
         SubCategoryView subCategory = service.createSubCategory(category.id(), "01", name);
         return new CatalogFixture(category, subCategory);

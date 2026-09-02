@@ -28,6 +28,7 @@ public class InventoryController {
 
     @GetMapping
     InventoryPage inventory(@RequestParam(required = false) UUID categoryId,
+                            @RequestParam(required = false) UUID subCategoryId,
                             @RequestParam(required = false) UUID brandId,
                             @RequestParam(required = false) String name,
                             @RequestParam(required = false) String skuCode,
@@ -35,7 +36,7 @@ public class InventoryController {
                             @RequestParam(defaultValue = "false") boolean lowStock,
                             @RequestParam(defaultValue = "0") int page,
                             @RequestParam(defaultValue = "20") int size) {
-        return inventoryService.search(new InventoryQuery(categoryId, brandId, name, skuCode, barcode,
+        return inventoryService.search(new InventoryQuery(categoryId, subCategoryId, brandId, name, skuCode, barcode,
                 lowStock, page, size));
     }
 
